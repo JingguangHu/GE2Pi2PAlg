@@ -1,0 +1,1658 @@
+#include "GaudiKernel/MsgStream.h"
+#include "GaudiKernel/AlgFactory.h"
+#include "GaudiKernel/ISvcLocator.h"
+#include "GaudiKernel/SmartDataPtr.h"
+#include "GaudiKernel/IDataProviderSvc.h"
+#include "GaudiKernel/PropertyMgr.h"
+#include "EventModel/EventModel.h"
+#include "EventModel/Event.h"
+
+#include "EventModel/EventHeader.h"
+#include "EvtRecEvent/EvtRecEvent.h"
+#include "EvtRecEvent/EvtRecTrack.h"
+#include "DstEvent/TofHitStatus.h"
+#include "VertexFit/IVertexDbSvc.h"
+#include "GaudiKernel/ISvcLocator.h"
+
+#include "TMath.h"
+#include "GaudiKernel/INTupleSvc.h"
+#include "GaudiKernel/NTuple.h"
+#include "GaudiKernel/Bootstrap.h"
+#include "GaudiKernel/IHistogramSvc.h"
+#include "CLHEP/Vector/ThreeVector.h"
+#include "CLHEP/Vector/LorentzVector.h"
+#include "CLHEP/Vector/TwoVector.h"
+
+using CLHEP::Hep3Vector;
+using CLHEP::Hep2Vector;
+using CLHEP::HepLorentzVector;
+#include "CLHEP/Geometry/Point3D.h"
+#ifndef ENABLE_BACKWARDS_COMPATIBILITY
+   typedef HepGeom::Point3D<double> HepPoint3D;
+#endif
+
+#include <vector>
+#include <string>
+#include "VertexFit/KinematicFit.h"
+#include "VertexFit/VertexFit.h"
+#include "VertexFit/SecondVertexFit.h"
+#include "VertexFit/Helix.h"
+#include "ParticleID/ParticleID.h"
+
+#include "MdcRecEvent/RecMdcTrack.h"
+#include "MdcRecEvent/RecMdcDedx.h"
+#include "TofRecEvent/RecTofTrack.h"
+#include "EmcRecEventModel/RecEmcShower.h"
+#include "MucRecEvent/RecMucTrack.h"
+#include "McTruth/McParticle.h"
+
+#include "EtaKstarKstarBarAlg/EtaKstarKstarBar.h"
+///#include "/ihepbatch/bes/zhaomg/share/Lib/PhysConstant.h"
+#include "VertexFitRefine/VertexFitRefine.h" 
+
+typedef std::vector<int> Vint;
+typedef std::vector<HepLorentzVector> Vp4;
+
+int nCounter_PSL[] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+//bool debug = false;
+
+const double mproton=0.938272;
+const double mpion=0.139570;
+const double mneutron=0.9395654205;
+const double mkaon=0.493677;
+bool debug = true;
+
+EtaKstarKstarBar::EtaKstarKstarBar(const std::string& name, ISvcLocator* pSvcLocator) : 
+  Algorithm(name, pSvcLocator)  {
+}
+//--------------------------------------------------------------
+StatusCode EtaKstarKstarBar::initialize() {
+//--------------------------------------------------------------
+  MsgStream log(msgSvc(), name());
+  log << MSG::INFO << "in initialize()" << endmsg;
+
+  StatusCode status;
+  nevt = 0;
+  nrun = 0;
+
+  status = service("THistSvc", m_histSvc);
+  if(status.isFailure() ){
+    log << MSG::INFO << "Unable to retrieve pointer to THistSvc" << endreq;
+    return status;
+  }
+  m_cutflow = new TH1F("cutflow", "cutflow", 7, -0.5, 6.5);
+ 
+  status = m_histSvc->regHist("/HIST/cutflow", m_cutflow);
+ 
+
+  NTuplePtr nt0(ntupleSvc(), "FILE1/mc");
+  if ( nt0 ) m_mcTuple = nt0;
+  else 
+  {
+    m_mcTuple = ntupleSvc()->book ("FILE1/mc", CLID_ColumnWiseTuple, "Data Analysis");
+    if ( m_mcTuple )    
+    {
+    //status = m_mcTuple->addItem ("indexmc",         m_idxmc, 0, 100);
+    //status = m_mcTuple->addIndexedItem("trkidx",    m_idxmc, m_trkidx);
+    //status = m_mcTuple->addIndexedItem("pdgid",     m_idxmc, m_pdgid);
+    //status = m_mcTuple->addIndexedItem("motherpdgid",     m_idxmc, m_motherpdgid);
+    //status = m_mcTuple->addIndexedItem("motheridx", m_idxmc, m_motheridx);
+      // McTruth Information
+      status = m_mcTuple->addItem ("mc_psip_mom",   n_psip_mom);
+      status = m_mcTuple->addItem ("mc_psip_cos",   n_psip_cos);
+      status = m_mcTuple->addItem ("mc_e_psip_mom",       n_e_psip_mom);
+      status = m_mcTuple->addItem ("mc_px_psip_mom",      n_px_psip_mom);
+      status = m_mcTuple->addItem ("mc_py_psip_mom",      n_py_psip_mom);
+      status = m_mcTuple->addItem ("mc_pz_psip_mom",      n_pz_psip_mom);
+    //  status = m_mcTuple->addItem ("mc_psip_pdgid",      n_psip_pdgid);
+      status = m_mcTuple->addItem ("mc_gamFrompsip_mom",      n_gamFrompsip_mom);
+      status = m_mcTuple->addItem ("mc_gamFrompsip_cos",      n_gamFrompsip_cos);
+      status = m_mcTuple->addItem ("mc_gamFrompsip_pdgid",      n_gamFrompsip_pdgid);
+      status = m_mcTuple->addItem ("mc_e_gamFrompsip_mom",       n_e_gamFrompsip_mom);
+      status = m_mcTuple->addItem ("mc_px_gamFrompsip_mom",      n_px_gamFrompsip_mom);
+      status = m_mcTuple->addItem ("mc_py_gamFrompsip_mom",      n_py_gamFrompsip_mom);
+      status = m_mcTuple->addItem ("mc_pz_gamFrompsip_mom",      n_pz_gamFrompsip_mom);
+      status = m_mcTuple->addItem ("mc_chic1_mom",      n_chic1_mom);
+      status = m_mcTuple->addItem ("mc_chic1_cos",      n_chic1_cos);
+      status = m_mcTuple->addItem ("mc_chic1_pdgid",      n_chic1_pdgid);
+      status = m_mcTuple->addItem ("mc_gam1FromEta_pdgid",   n_gam1FromEta_pdgid);
+      status = m_mcTuple->addItem ("mc_gam1FromEta_mom",  n_gam1FromEta_mom);
+      status = m_mcTuple->addItem ("mc_gam1FromEta_cos",  n_gam1FromEta_cos);
+      status = m_mcTuple->addItem ("mc_gam2FromEta_cos",  n_gam2FromEta_cos);
+      status = m_mcTuple->addItem ("mc_gam2FromEta_mom",   n_gam2FromEta_mom);
+      status = m_mcTuple->addItem ("mc_gam2FromEta_pdgid",   n_gam2FromEta_pdgid);
+      status = m_mcTuple->addItem ("mc_kplus_pdgid",   n_kplus_pdgid);
+      status = m_mcTuple->addItem ("mc_kminus_pdgid",   n_kminus_pdgid);
+      status = m_mcTuple->addItem ("mc_pip_pdgid",   n_pip_pdgid);
+      status = m_mcTuple->addItem ("mc_pim_pdgid",   n_pim_pdgid);
+      status = m_mcTuple->addItem ("mc_eta_mom",  n_eta_mom);
+      status = m_mcTuple->addItem ("mc_eta_cos",  n_eta_cos);
+      status = m_mcTuple->addItem ("mc_eta_pdgid",  n_eta_pdgid);
+      status = m_mcTuple->addItem ("mc_kstar_mom",   n_kstar_mom);
+      status = m_mcTuple->addItem ("mc_kstar_cos",   n_kstar_cos);
+      status = m_mcTuple->addItem ("mc_kstar_pdgid",   n_kstar_pdgid);
+      status = m_mcTuple->addItem ("mc_kstarbar_mom",   n_kstarbar_mom);
+      status = m_mcTuple->addItem ("mc_kstarbar_cos",   n_kstarbar_cos);
+      status = m_mcTuple->addItem ("mc_kstarbar_pdgid",   n_kstarbar_pdgid);
+      status = m_mcTuple->addItem ("mc_kplus_mom",   n_kplus_mom);
+      status = m_mcTuple->addItem ("mc_kplus_cos",   n_kplus_cos);
+      status = m_mcTuple->addItem ("mc_kminus_mom",   n_kminus_mom);
+      status = m_mcTuple->addItem ("mc_kminus_cos",   n_kminus_cos);
+      status = m_mcTuple->addItem ("mc_pip_mom",   n_pip_mom);
+      status = m_mcTuple->addItem ("mc_pip_cos",   n_pip_cos);
+      status = m_mcTuple->addItem ("mc_pim_mom",   n_pim_mom);
+      status = m_mcTuple->addItem ("mc_pim_cos",   n_pim_cos);
+      status = m_mcTuple->addItem ("mc_e_eta_mom",      n_e_eta_mom);
+      status = m_mcTuple->addItem ("mc_px_eta_mom",     n_px_eta_mom);
+      status = m_mcTuple->addItem ("mc_py_eta_mom",     n_py_eta_mom);
+      status = m_mcTuple->addItem ("mc_pz_eta_mom",     n_pz_eta_mom);
+      status = m_mcTuple->addItem ("mc_e_kstar_mom",       n_e_kstar_mom);
+      status = m_mcTuple->addItem ("mc_px_kstar_mom",      n_px_kstar_mom);
+      status = m_mcTuple->addItem ("mc_py_kstar_mom",      n_py_kstar_mom);
+      status = m_mcTuple->addItem ("mc_pz_kstar_mom",      n_pz_kstar_mom);
+      status = m_mcTuple->addItem ("mc_e_kstarbar_mom",       n_e_kstarbar_mom);
+      status = m_mcTuple->addItem ("mc_px_kstarbar_mom",      n_px_kstarbar_mom);
+      status = m_mcTuple->addItem ("mc_py_kstarbar_mom",      n_py_kstarbar_mom);
+      status = m_mcTuple->addItem ("mc_pz_kstarbar_mom",      n_pz_kstarbar_mom);
+   }
+   else    
+   { 
+      log << MSG::ERROR << "    Cannot book N-tuple:" << long(m_mcTuple) << endmsg;
+      return StatusCode::FAILURE;
+   }
+  }
+
+  NTuplePtr nt1(ntupleSvc(), "FILE1/ANA");
+  if ( nt1 ) m_anaTuple = nt1;
+  else 
+  {
+    m_anaTuple = ntupleSvc()->book ("FILE1/ANA", CLID_ColumnWiseTuple, "Data Analysis");
+    if ( m_anaTuple )    
+    {
+if(debug) cout<<__LINE__<<endl;
+      // McTruth Information
+      status = m_anaTuple->addItem ("indexmc",         m_idxmc, 0, 100);
+      status = m_anaTuple->addIndexedItem("trkidx",    m_idxmc, m_trkidx);
+      status = m_anaTuple->addIndexedItem("pdgid",     m_idxmc, m_pdgid);
+      status = m_anaTuple->addIndexedItem("motherpdgid",     m_idxmc, m_motherpdgid);
+      status = m_anaTuple->addIndexedItem("motheridx", m_idxmc, m_motheridx);
+if(debug) cout<<__LINE__<<endl;
+      // gamma from psip 
+      status = m_anaTuple->addItem ("anamc_e_gamFrompsip_mom",       m_e_gamFrompsip_mom);
+      status = m_anaTuple->addItem ("anamc_px_gamFrompsip_mom",      m_px_gamFrompsip_mom);
+      status = m_anaTuple->addItem ("anamc_py_gamFrompsip_mom",      m_py_gamFrompsip_mom);
+      status = m_anaTuple->addItem ("anamc_pz_gamFrompsip_mom",      m_pz_gamFrompsip_mom);
+      //chic1 Info. 
+      status = m_anaTuple->addItem ("anamc_e_chic1_mom",       m_e_chic1_mom);
+      status = m_anaTuple->addItem ("anamc_px_chic1_mom",      m_px_chic1_mom);
+      status = m_anaTuple->addItem ("anamc_py_chic1_mom",      m_py_chic1_mom);
+      status = m_anaTuple->addItem ("anamc_pz_chic1_mom",      m_pz_chic1_mom);
+ 
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_e_eta_mom",      m_e_eta_mom);
+      status = m_anaTuple->addItem ("anamc_px_eta_mom",     m_px_eta_mom);
+      status = m_anaTuple->addItem ("anamc_py_eta_mom",     m_py_eta_mom);
+      status = m_anaTuple->addItem ("anamc_pz_eta_mom",     m_pz_eta_mom);
+
+      status = m_anaTuple->addItem ("anamc_e_kstar_mom",       m_e_kstar_mom);
+      status = m_anaTuple->addItem ("anamc_px_kstar_mom",      m_px_kstar_mom);
+      status = m_anaTuple->addItem ("anamc_py_kstar_mom",      m_py_kstar_mom);
+      status = m_anaTuple->addItem ("anamc_pz_kstar_mom",      m_pz_kstar_mom);
+
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_e_kstarbar_mom",       m_e_kstarbar_mom);
+      status = m_anaTuple->addItem ("anamc_px_kstarbar_mom",      m_px_kstarbar_mom);
+      status = m_anaTuple->addItem ("anamc_py_kstarbar_mom",      m_py_kstarbar_mom);
+      status = m_anaTuple->addItem ("anamc_pz_kstarbar_mom",      m_pz_kstarbar_mom);
+
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_e_psip_mom",       m_e_psip_mom);
+      status = m_anaTuple->addItem ("anamc_px_psip_mom",      m_px_psip_mom);
+      status = m_anaTuple->addItem ("anamc_py_psip_mom",      m_py_psip_mom);
+      status = m_anaTuple->addItem ("anamc_pz_psip_mom",      m_pz_psip_mom);
+
+      status = m_anaTuple->addItem ("anamc_gamFrompsip_mom",      m_gamFrompsip_mom);
+      status = m_anaTuple->addItem ("anamc_gamFrompsip_cos",      m_gamFrompsip_cos);
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_gamFrompsip_pdgid",      m_gamFrompsip_pdgid);
+      status = m_anaTuple->addItem ("anamc_chic1_mom",      m_chic1_mom);
+      status = m_anaTuple->addItem ("anamc_chic1_cos",      m_chic1_cos);
+      status = m_anaTuple->addItem ("anamc_chic1_pdgid",      m_chic1_pdgid);
+      status = m_anaTuple->addItem ("anamc_gam1FromEta_pdgid",   m_gam1FromEta_pdgid);
+      status = m_anaTuple->addItem ("anamc_gam2FromEta_mom",   m_gam2FromEta_mom);
+      status = m_anaTuple->addItem ("anamc_gam2FromEta_pdgid",   m_gam2FromEta_pdgid);
+      status = m_anaTuple->addItem ("anamc_kplus_pdgid",   m_kplus_pdgid);
+      status = m_anaTuple->addItem ("anamc_kminus_pdgid",   m_kminus_pdgid);
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_pip_pdgid",   m_pip_pdgid);
+      status = m_anaTuple->addItem ("anamc_pim_pdgid",   m_pim_pdgid);
+      status = m_anaTuple->addItem ("anamc_eta_mom",  m_eta_mom);
+      status = m_anaTuple->addItem ("anamc_eta_cos",  m_eta_cos);
+      status = m_anaTuple->addItem ("anamc_eta_pdgid",  m_eta_pdgid);
+      status = m_anaTuple->addItem ("anamc_gam1FromEta_mom",  m_gam1FromEta_mom);
+      status = m_anaTuple->addItem ("anamc_gam1FromEta_cos",  m_gam1FromEta_cos);
+      status = m_anaTuple->addItem ("anamc_gam2FromEta_cos",  m_gam2FromEta_cos);
+      status = m_anaTuple->addItem ("anamc_kstar_mom",   m_kstar_mom);
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_kstar_cos",   m_kstar_cos);
+      status = m_anaTuple->addItem ("anamc_kstar_pdgid",   m_kstar_pdgid);
+      status = m_anaTuple->addItem ("anamc_kstarbar_mom",   m_kstarbar_mom);
+      status = m_anaTuple->addItem ("anamc_kstarbar_cos",   m_kstarbar_cos);
+      status = m_anaTuple->addItem ("anamc_kstarbar_pdgid",   m_kstarbar_pdgid);
+      status = m_anaTuple->addItem ("anamc_psip_mom",   m_psip_mom);
+      status = m_anaTuple->addItem ("anamc_psip_cos",   m_psip_cos);
+      status = m_anaTuple->addItem ("anamc_psip_pdgid",   m_psip_pdgid);
+      status = m_anaTuple->addItem ("anamc_kplus_mom",   m_kplus_mom);
+      status = m_anaTuple->addItem ("anamc_kplus_cos",   m_kplus_cos);
+      status = m_anaTuple->addItem ("anamc_kminus_mom",   m_kminus_mom);
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem ("anamc_kminus_cos",   m_kminus_cos);
+      status = m_anaTuple->addItem ("anamc_pip_mom",   m_pip_mom);
+      status = m_anaTuple->addItem ("anamc_pip_cos",   m_pip_cos);
+      status = m_anaTuple->addItem ("anamc_pim_mom",   m_pim_mom);
+      status = m_anaTuple->addItem ("anamc_pim_cos",   m_pim_cos);
+      // General Information
+//    status = m_anaTuple->addItem ("runNo",   vn_run);
+//    status = m_anaTuple->addItem ("event",   vn_event);
+//    status = m_anaTuple->addItem ("nCharged",vn_nchrg);
+//    status = m_anaTuple->addItem ("nGood",   vn_ngood);
+//    status = m_anaTuple->addItem ("nNeutral",vn_nneu);
+//    status = m_anaTuple->addItem ("nProton", vn_nProton);
+//    status = m_anaTuple->addItem ("PrCharge", vn_PrCharge);
+//    status = m_anaTuple->addItem ("nKaon",   vn_nKaon);
+//    status = m_anaTuple->addItem ("nPion",   vn_nPion);
+      /////////////////pid ///////////////////////////////
+      status = m_anaTuple->addItem ("nGood",  m_nGood,0,200);
+      status = m_anaTuple->addIndexedItem("mdcTrk_p", m_nGood, m_ptrk_pid);
+      status = m_anaTuple->addIndexedItem("mdcTrk_cost", m_nGood, m_cost_pid);
+      status = m_anaTuple->addIndexedItem("dedx_pid", m_nGood, m_dedx_pid);
+      status = m_anaTuple->addIndexedItem("tof1_pid", m_nGood, m_tof1_pid);
+      status = m_anaTuple->addIndexedItem("tof2_pid", m_nGood, m_tof2_pid);
+      status = m_anaTuple->addIndexedItem("prob_pion_pid", m_nGood, m_prob_pion_pid);
+      status = m_anaTuple->addIndexedItem("prob_kaon_pid", m_nGood, m_prob_kaon_pid);
+      status = m_anaTuple->addIndexedItem("prob_proton_pid", m_nGood, m_prob_proton_pid);
+if(debug) cout<<__LINE__<<endl;
+      status = m_anaTuple->addItem("kp_index", m_kp_index);
+      status = m_anaTuple->addItem("kp_kaon_pid", m_kp_kaon_pid);
+      status = m_anaTuple->addItem("kp_kalTrk_px", m_kp_kalTrk_px);
+      status = m_anaTuple->addItem("kp_kalTrk_py", m_kp_kalTrk_py);
+      status = m_anaTuple->addItem("kp_kalTrk_pz", m_kp_kalTrk_pz);
+      status = m_anaTuple->addItem("kp_kalTrk_mom", m_kp_kalTrk_mom);
+      status = m_anaTuple->addItem("kp_kalTrk_e", m_kp_kalTrk_e);
+      status = m_anaTuple->addItem("km_index", m_km_index);
+      status = m_anaTuple->addItem("km_kaon_pid", m_km_kaon_pid);
+      status = m_anaTuple->addItem("km_kalTrk_px", m_km_kalTrk_px);
+      status = m_anaTuple->addItem("km_kalTrk_py", m_km_kalTrk_py);
+      status = m_anaTuple->addItem("km_kalTrk_pz", m_km_kalTrk_pz);
+      status = m_anaTuple->addItem("km_kalTrk_mom", m_km_kalTrk_mom);
+      status = m_anaTuple->addItem("km_kalTrk_e", m_km_kalTrk_e);
+      status = m_anaTuple->addItem("pip_index", m_pip_index);
+      status = m_anaTuple->addItem("pip_pion_pid", m_pip_pion_pid);
+      status = m_anaTuple->addItem("pip_kalTrk_px", m_pip_kalTrk_px);
+      status = m_anaTuple->addItem("pip_kalTrk_py", m_pip_kalTrk_py);
+      status = m_anaTuple->addItem("pip_kalTrk_pz", m_pip_kalTrk_pz);
+      status = m_anaTuple->addItem("pip_kalTrk_mom", m_pip_kalTrk_mom);
+      status = m_anaTuple->addItem("pip_kalTrk_e", m_pip_kalTrk_e);
+      status = m_anaTuple->addItem("pim_index", m_pim_index);
+      status = m_anaTuple->addItem("pim_pion_pid", m_pim_pion_pid);
+      status = m_anaTuple->addItem("pim_kalTrk_px", m_pim_kalTrk_px);
+      status = m_anaTuple->addItem("pim_kalTrk_py", m_pim_kalTrk_py);
+      status = m_anaTuple->addItem("pim_kalTrk_pz", m_pim_kalTrk_pz);
+      status = m_anaTuple->addItem("pim_kalTrk_mom", m_pim_kalTrk_mom);
+      status = m_anaTuple->addItem("pim_kalTrk_e", m_pim_kalTrk_e);
+      status = m_anaTuple->addIndexedItem("pion_pid", m_nGood, m_pion_pid);
+      status = m_anaTuple->addIndexedItem("kaon_pid", m_nGood, m_kaon_pid);
+      //vertex fit
+      status = m_anaTuple->addItem("chisq_vtxfit", m_chisq_vtxfit);
+    //status = m_anaTuple->addItem ("kplus_emc_e",   m_kplus_emc_e);
+    //status = m_anaTuple->addItem ("kplus_emc_theta",   m_kplus_emc_theta);
+    //status = m_anaTuple->addItem ("kplus_emc_phi",   m_kplus_emc_phi);
+    //status = m_anaTuple->addItem ("kplus_emc_epratio",   m_kplus_emc_epratio);
+    //status = m_anaTuple->addItem ("kplus_muc_layers",   m_kplus_muc_layers);
+    //status = m_anaTuple->addItem ("kplus_muc_hits",   m_kplus_muc_hits);
+    //status = m_anaTuple->addItem ("kplus_muc_dep",   m_kplus_muc_dep);
+    //status = m_anaTuple->addItem ("kminus_emc_e",   m_kminus_emc_e);
+    //status = m_anaTuple->addItem ("kminus_emc_theta",   m_kminus_emc_theta);
+    //status = m_anaTuple->addItem ("kminus_emc_phi",   m_kminus_emc_phi);
+    //status = m_anaTuple->addItem ("kminus_emc_epratio",   m_kminus_emc_epratio);
+    //status = m_anaTuple->addItem ("kminus_muc_layers",   m_kminus_muc_layers);
+    //status = m_anaTuple->addItem ("kminus_muc_hits",   m_kminus_muc_hits);
+    //status = m_anaTuple->addItem ("kminus_muc_dep",   m_kminus_muc_dep);
+    //status = m_anaTuple->addItem ("pip_emc_e",   m_pip_emc_e);
+    //status = m_anaTuple->addItem ("pip_emc_theta",   m_pip_emc_theta);
+    //status = m_anaTuple->addItem ("pip_emc_phi",   m_pip_emc_phi);
+    //status = m_anaTuple->addItem ("pip_emc_epratio",   m_pip_emc_epratio);
+    //status = m_anaTuple->addItem ("pip_muc_layers",   m_pip_muc_layers);
+    //status = m_anaTuple->addItem ("pip_muc_hits",   m_pip_muc_hits);
+    //status = m_anaTuple->addItem ("pip_muc_dep",   m_pip_muc_dep);
+    //status = m_anaTuple->addItem ("pim_emc_e",   m_pim_emc_e);
+    //status = m_anaTuple->addItem ("pim_emc_theta",   m_pim_emc_theta);
+    //status = m_anaTuple->addItem ("pim_emc_phi",   m_pim_emc_phi);
+    //status = m_anaTuple->addItem ("pim_emc_epratio",   m_pim_emc_epratio);
+    //status = m_anaTuple->addItem ("pim_muc_layers",   m_pim_muc_layers);
+    //status = m_anaTuple->addItem ("pim_muc_hits",   m_pim_muc_hits);
+    //status = m_anaTuple->addItem ("pim_muc_dep",   m_pim_muc_dep);
+    //
+    
+   }
+    else    
+    { 
+      log << MSG::ERROR << "    Cannot book N-tuple:" << long(m_anaTuple) << endmsg;
+      return StatusCode::FAILURE;
+    }
+  }
+  
+  log << MSG::INFO << "successfully return from initialize()" <<endmsg;
+  return StatusCode::SUCCESS;
+}
+
+//--------------------------------------------------------------
+StatusCode EtaKstarKstarBar::execute() {
+//--------------------------------------------------------------
+  MsgStream log(msgSvc(), name());
+  log << MSG::INFO << "in execute()" << endreq;
+
+  nCounter_PSL[0]++;	// Total Events
+  m_cutflow->Fill(0);
+
+//-----------------------------------------------
+// Session #0: At the beginning
+//-----------------------------------------------
+  nevt +=1;
+
+  SmartDataPtr<Event::EventHeader> eventHeader(eventSvc(),"/Event/EventHeader");
+  if(eventHeader->eventNumber() == 1) 
+  {
+    std::cout  << "************************************" << std::endl;
+    std::cout  << "* New Run begin =========> " <<eventHeader->runNumber()<< " ****" << std::endl;
+    std::cout  << "************************************" << std::endl;
+  }
+
+  int runNo = eventHeader->runNumber();
+  int event = eventHeader->eventNumber();
+  if(eventHeader->eventNumber() == 1) nrun+=1;
+  if(fmod(double(nevt),1000.0) <= 0.5) { std::cout << nevt << "   Events executed!" << std::endl; }
+
+  SmartDataPtr<EvtRecEvent> evtRecEvent(eventSvc(), EventModel::EvtRec::EvtRecEvent);
+  log << MSG::DEBUG
+    <<"No. of charged tracks = "<<evtRecEvent->totalCharged() << " , "
+    <<"No. of neutral tracks = "<<evtRecEvent->totalNeutral() << " , "
+    <<"No. of total tracks   = "<<evtRecEvent->totalTracks()  <<endreq;
+  SmartDataPtr<EvtRecTrackCol> evtRecTrkCol(eventSvc(),  EventModel::EvtRec::EvtRecTrackCol);
+
+  //if(evtRecEvent->totalCharged() < 4) { return StatusCode::SUCCESS; }
+  //nCounter_PSL[1]++;	// No. of Events with "nchrg>=4"
+  //m_cutflow->Fill(1);
+
+
+if(debug) cout<<__LINE__<<endl;
+
+ // mResonance = GetCmsEnergy(abs(runNo));
+  mResonance = 3.686;
+  pResonance = mResonance*0.011;
+
+  //
+  // Session#0: McTruth
+  //
+  if(eventHeader->runNumber()<0)
+  {
+    //MC information
+    //MC particle collection
+    SmartDataPtr<Event::McParticleCol> mcParticleCol(eventSvc(),"/Event/MC/McParticleCol");
+    if(!mcParticleCol)
+    {
+      std::cout << "Could not retrieve McParticelCol" << std::endl;
+      return StatusCode::FAILURE;
+    }else{
+      Event::McParticleCol::iterator iter_mc = mcParticleCol->begin();
+      bool psipDecay = false;
+      int rootIndex = -1;
+      const int incPid=100443;
+      int m_numParticle=1;
+         if(debug) cout<<__LINE__<<endl;
+    //  Event::McParticleCol::iterator  iter_mc ;
+      HepLorentzVector p4_psip, p4_gamFrompsip, p4_chic1, p4_kstar, p4_eta; 
+      HepLorentzVector p4_kstarbar, p4_kplus, p4_kminus, p4_pip, p4_pim, p4_gam1FromEta,p4_gam2FromEta;
+      for(; iter_mc != mcParticleCol->end(); iter_mc++)
+      {
+         if((*iter_mc)->primaryParticle()) continue;
+         if(!(*iter_mc)->decayFromGenerator()) continue;
+
+         if(debug) cout<<__LINE__<<endl;
+         if((*iter_mc)->particleProperty()==incPid) // 443=Jpsi; 100443=Psip; 30443=Psipp
+         {
+           psipDecay = true;
+           rootIndex = (*iter_mc)->trackIndex();
+         }
+         if (!psipDecay) continue;
+
+
+         int trkidx = (*iter_mc)->trackIndex() - rootIndex;                        // 0ID= 100443                     // psi(3686)
+         int mcidx = ((*iter_mc)->mother()).trackIndex() - rootIndex-1;      ///   // 1ID= 22                        // gamma
+         int pdgid = (*iter_mc)->particleProperty();                               // 2ID= 20443                     // chi_c1(1P)
+         int motherpdgid = ((*iter_mc)->mother()).particleProperty();              // 3ID= 221                       // eta
+                                                                                   // 5ID= -313                     // K*0 bar
+         m_trkidx[m_numParticle] = trkidx;	if(debug) cout<<__LINE__<<endl;        // 6ID= 211                      // pi+  
+         m_pdgid[m_numParticle] = pdgid;	if(debug) cout<<__LINE__<<endl;        // 7ID= -211                    // pi-
+         m_motherpdgid[m_numParticle] = ((*iter_mc)->mother()).particleProperty();	// 8ID= 321                   // K+
+         m_motheridx[m_numParticle] = mcidx;	if(debug) cout<<__LINE__<<endl;    // 9ID= -321                   // K-
+         double costmc = cos((*iter_mc)->initialFourMomentum().theta());                    
+         double ptmc = (*iter_mc)->initialFourMomentum().rho();                    
+         double pxmc = (*iter_mc)->initialFourMomentum().px();                     
+         double pymc = (*iter_mc)->initialFourMomentum().py();                     
+         double pzmc = (*iter_mc)->initialFourMomentum().pz();                    
+         double pemc = (*iter_mc)->initialFourMomentum().e();
+	 //cout<<m_numParticle<<"ID= "<<pdgid<<endl;
+           
+         if(debug) cout<<__LINE__<<endl;                                           // 4ID= 313                      // K*0
+         if(pdgid==100443) //psi(3686)
+         {
+            p4_psip.setPx(pxmc);  
+            p4_psip.setPy(pymc);  
+            p4_psip.setPz(pzmc);  
+            p4_psip.setE(pemc);  
+//mc level
+            //n_psip_pdgid = pdgid;
+            n_psip_mom = ptmc;
+            n_psip_cos = costmc;
+            n_e_psip_mom = pemc;
+            n_px_psip_mom = pxmc;
+            n_py_psip_mom = pymc;
+            n_pz_psip_mom = pzmc;
+//reco level           
+            m_psip_pdgid = pdgid; 
+            m_psip_mom = ptmc;
+            m_psip_cos = costmc;
+            m_e_psip_mom = pemc;
+            m_px_psip_mom = pxmc;
+            m_py_psip_mom = pymc;
+            m_pz_psip_mom = pzmc;
+        } 
+ 
+
+        if(pdgid==22&&motherpdgid==100443) //gamma from psip
+         {
+            p4_gamFrompsip.setPx(pxmc); 
+            p4_gamFrompsip.setPy(pymc); 
+            p4_gamFrompsip.setPz(pzmc); 
+            p4_gamFrompsip.setE(pemc); 
+ 
+            n_gamFrompsip_pdgid = pdgid;
+            n_gamFrompsip_mom = ptmc;
+            n_gamFrompsip_cos = costmc;
+            n_e_gamFrompsip_mom = pemc;
+            n_px_gamFrompsip_mom = pxmc;
+            n_py_gamFrompsip_mom = pymc;
+            n_pz_gamFrompsip_mom = pzmc;
+
+            m_gamFrompsip_mom = ptmc;
+            m_gamFrompsip_cos = costmc;
+            m_gamFrompsip_pdgid = pdgid; 
+            m_e_gamFrompsip_mom = pemc;
+            m_px_gamFrompsip_mom = pxmc;
+            m_py_gamFrompsip_mom = pymc;
+            m_pz_gamFrompsip_mom = pzmc;
+            
+         }
+
+         if(pdgid==20443 && motherpdgid==100443)// chic1 from psip 
+	 {
+            p4_chic1.setPx(pxmc); 
+            p4_chic1.setPy(pymc); 
+            p4_chic1.setPz(pzmc); 
+            p4_chic1.setE(pemc); 
+
+            n_chic1_mom = ptmc;
+            n_chic1_cos = costmc;
+            n_chic1_pdgid = pdgid; 
+
+            m_chic1_mom = ptmc;
+            m_chic1_cos = costmc;
+            m_chic1_pdgid = pdgid; 
+            
+	 }
+
+         if(pdgid==221 && motherpdgid==20443)// eta from chic1 
+     {
+            p4_eta.setPx(pxmc);
+            p4_eta.setPy(pymc);
+            p4_eta.setPz(pzmc);
+            p4_eta.setE(pemc); 
+   
+            n_eta_mom = ptmc;
+            n_eta_cos = costmc;
+
+            m_eta_mom = ptmc; 
+            m_eta_cos = costmc;
+            m_eta_pdgid = pdgid; 
+            
+     }
+        
+
+         if(pdgid==313 && motherpdgid==20443)// K*0 from chic1 
+     {
+            p4_kstar.setPx(pxmc);
+            p4_kstar.setPy(pymc);
+            p4_kstar.setPz(pzmc);
+            p4_kstar.setE(pemc); 
+     
+            n_kstar_mom = ptmc;
+            n_kstar_cos = costmc;
+
+            m_kstar_mom = ptmc;
+            m_kstar_cos = costmc;
+            m_kstar_pdgid = pdgid; 
+    
+     }
+
+
+         if(pdgid==-313 && motherpdgid==20443)// K*0bar from chic1 
+         {
+           
+            p4_kstarbar.setPx(pxmc);
+            p4_kstarbar.setPy(pymc);
+            p4_kstarbar.setPz(pzmc);
+            p4_kstarbar.setE(pemc); 
+
+            n_kstarbar_mom = ptmc;
+            n_kstarbar_cos = costmc;
+
+            m_kstarbar_mom = ptmc;
+            m_kstarbar_cos = costmc;
+            m_kstarbar_pdgid = pdgid; 
+         }
+        
+
+         if(pdgid==22 && motherpdgid==221)// gamma1 from eta 
+     {
+            p4_gam1FromEta.setPx(pxmc);
+            p4_gam1FromEta.setPy(pymc);
+            p4_gam1FromEta.setPz(pzmc);
+            p4_gam1FromEta.setE(pemc); 
+
+            n_gam1FromEta_mom = ptmc;
+            n_gam1FromEta_cos = costmc;
+
+            m_gam1FromEta_mom = ptmc; 
+            m_gam1FromEta_cos = costmc;
+            m_gam1FromEta_pdgid = pdgid; 
+     }
+         if(pdgid==22 && motherpdgid==221)// gamma2 from eta 
+     {
+            p4_gam2FromEta.setPx(pxmc);
+            p4_gam2FromEta.setPy(pymc);
+            p4_gam2FromEta.setPz(pzmc);
+            p4_gam2FromEta.setE(pemc); 
+   
+            n_gam2FromEta_mom = ptmc;
+            n_gam2FromEta_cos = costmc;
+
+            m_gam2FromEta_mom = ptmc; 
+            m_gam2FromEta_cos = costmc;
+            m_gam2FromEta_pdgid = pdgid; 
+     } 
+         if(pdgid==321 && motherpdgid==313)// K+ from kstar0 
+     {
+            p4_kplus.setPx(pxmc);
+            p4_kplus.setPy(pymc);
+            p4_kplus.setPz(pzmc);
+            p4_kplus.setE(pemc); 
+   
+            n_kplus_mom = ptmc;
+            n_kplus_cos = costmc;
+
+            m_kplus_mom = ptmc; 
+            m_kplus_cos = costmc;
+            m_kplus_pdgid = pdgid; 
+            
+     }
+         if(pdgid==-221 && motherpdgid==313)// pi- from kstar0 
+     {
+            p4_pim.setPx(pxmc);
+            p4_pim.setPy(pymc);
+            p4_pim.setPz(pzmc);
+            p4_pim.setE(pemc); 
+   
+            n_pim_mom = ptmc;
+            n_pim_cos = costmc;
+
+            m_pim_mom = ptmc; 
+            m_pim_cos = costmc;
+            m_pim_pdgid = pdgid; 
+            
+     }
+         if(pdgid==-321 && motherpdgid==-313)// k- from kstar0bar 
+     {
+            p4_kminus.setPx(pxmc);
+            p4_kminus.setPy(pymc);
+            p4_kminus.setPz(pzmc);
+            p4_kminus.setE(pemc); 
+   
+            n_kminus_mom = ptmc;
+            n_kminus_cos = costmc;
+
+            m_kminus_mom = ptmc; 
+            m_kminus_cos = costmc;
+            m_kminus_pdgid = pdgid; 
+            
+     }
+         if(pdgid==221 && motherpdgid==-313)// pi+ from kstar0bar 
+     {
+            p4_pip.setPx(pxmc);
+            p4_pip.setPy(pymc);
+            p4_pip.setPz(pzmc);
+            p4_pip.setE(pemc); 
+   
+            n_pip_mom = ptmc;
+            n_pip_cos = costmc;
+
+            m_pip_mom = ptmc; 
+            m_pip_cos = costmc;
+            m_pip_pdgid = pdgid; 
+            
+     }
+         m_numParticle += 1;
+      }//End of all particles
+            
+      const Hep3Vector mc_chic1_cms = -p4_chic1.boostVector(); 
+      p4_eta.boost(mc_chic1_cms);
+      p4_kstar.boost(mc_chic1_cms);
+      p4_kstarbar.boost(mc_chic1_cms);
+//mc
+      n_e_eta_mom = p4_eta.e();
+      n_px_eta_mom = p4_eta.px();
+      n_py_eta_mom = p4_eta.py();
+      n_pz_eta_mom = p4_eta.pz();
+//ana
+      m_e_eta_mom = p4_eta.e();
+      m_px_eta_mom = p4_eta.px();
+      m_py_eta_mom = p4_eta.py();
+      m_pz_eta_mom = p4_eta.pz();
+      
+      n_e_kstar_mom = p4_kstar.e();
+      n_px_kstar_mom = p4_kstar.px();
+      n_py_kstar_mom = p4_kstar.py();
+      n_pz_kstar_mom = p4_kstar.pz();
+
+      m_e_kstar_mom = p4_kstar.e();
+      m_px_kstar_mom = p4_kstar.px();
+      m_py_kstar_mom = p4_kstar.py();
+      m_pz_kstar_mom = p4_kstar.pz();
+
+      n_e_kstarbar_mom = p4_kstarbar.e();
+      n_px_kstarbar_mom = p4_kstarbar.px();
+      n_py_kstarbar_mom = p4_kstarbar.py();
+      n_pz_kstarbar_mom = p4_kstarbar.pz();
+
+      m_e_kstarbar_mom = p4_kstarbar.e();
+      m_px_kstarbar_mom = p4_kstarbar.px();
+      m_py_kstarbar_mom = p4_kstarbar.py();
+      m_pz_kstarbar_mom = p4_kstarbar.pz();
+      
+      m_idxmc = m_numParticle;
+      cout<<"Num. of Particles: "<<m_numParticle<<endl;
+  }//else{
+}
+
+   m_mcTuple->write();
+
+   
+if(debug) cout<<__LINE__<<endl;
+//-----------------------------------------------
+// Session #1: Neutral Tracks Selection
+//-----------------------------------------------
+  if(debug) cout<<__LINE__<<endl;
+  Vint iGam; iGam.clear();
+  for(int i = evtRecEvent->totalCharged(); i< evtRecEvent->totalTracks(); i++) 
+  {
+    EvtRecTrackIterator itTrk=evtRecTrkCol->begin() + i;
+    if(!(*itTrk)->isEmcShowerValid()) continue;
+    RecEmcShower *emcTrk = (*itTrk)->emcShower();
+    Hep3Vector emcpos(emcTrk->x(), emcTrk->y(), emcTrk->z());
+    // find the nearest charged track
+    double dthe = 200.;
+    double dphi = 200.;
+    double dang = 200.;
+    for(int j = 0; j < evtRecEvent->totalCharged(); j++) {
+      EvtRecTrackIterator jtTrk = evtRecTrkCol->begin() + j;
+      if(!(*jtTrk)->isExtTrackValid()) continue;
+      RecExtTrack *extTrk = (*jtTrk)->extTrack();
+      if(extTrk->emcVolumeNumber() == -1) continue;
+      Hep3Vector extpos = extTrk->emcPosition();
+      //      double ctht = extpos.cosTheta(emcpos);
+      double angd = extpos.angle(emcpos);
+      double thed = extpos.theta() - emcpos.theta();
+      double phid = extpos.deltaPhi(emcpos);
+      thed = fmod(thed+CLHEP::twopi+CLHEP::twopi+pi, CLHEP::twopi) - CLHEP::pi;
+      phid = fmod(phid+CLHEP::twopi+CLHEP::twopi+pi, CLHEP::twopi) - CLHEP::pi;
+      if(angd < dang){ dang = angd; dthe = thed; dphi = phid; }
+    }
+    if(dang>=200) continue;
+    double eraw = emcTrk->energy();
+    dthe = dthe * 180 / (CLHEP::pi);
+    dphi = dphi * 180 / (CLHEP::pi);
+    dang = dang * 180 / (CLHEP::pi);
+    double time = emcTrk->time();
+    double costheta = emcpos.cosTheta();
+    //
+    // good photon cut will be set here
+    //
+    if(time>=14.||time<=0.)continue;
+    if(fabs(costheta) > 0.92)continue;
+    if(!((fabs(costheta) < 0.80&& eraw > 0.025)||(fabs(costheta)>0.86&&fabs(costheta)<0.92&& eraw > 0.050))) continue;
+    if(fabs(dang) < 10.0) continue;
+//  m_temc = time;
+//  m_dthe = dthe;
+//  m_dphi = dphi;
+//  m_dang = dang;
+//  m_eraw = eraw;
+//  m_theta = fabs(costheta);
+    iGam.push_back(i);
+  }
+  int nGam = iGam.size();
+  if(nGam<3||nGam>100){ return StatusCode::SUCCESS; } // at least three photon
+  nCounter_PSL[1]++;
+  m_cutflow->Fill(1);
+
+  Vp4 pGam;
+  pGam.clear();
+  for(int i = 0; i < nGam; i++) 
+  {
+     EvtRecTrackIterator itTrk = evtRecTrkCol->begin() + iGam[i];
+     RecEmcShower* emcTrk = (*itTrk)->emcShower();
+     double eraw = emcTrk->energy();
+     double phi = emcTrk->phi();
+     double the = emcTrk->theta();
+     HepLorentzVector ptrk;
+     ptrk.setPx(eraw*sin(the)*cos(phi));
+     ptrk.setPy(eraw*sin(the)*sin(phi));
+     ptrk.setPz(eraw*cos(the));
+     ptrk.setE(eraw);
+     pGam.push_back(ptrk);
+  }
+
+if(debug) cout<<__LINE__<<endl;
+//-----------------------------------------------
+// Session #2: Charged Tracks Selection
+//-----------------------------------------------
+  Vint iGood, iQp, iQm, iSorted;
+  iGood.clear();
+  iQp.clear();
+  iQm.clear();
+  iSorted.clear();
+  Vp4 pkp,pkm;
+  Vp4 ppip,ppim;
+  pkp.clear();
+  pkm.clear();
+  ppip.clear();
+  ppim.clear();
+  Hep3Vector xorigin(0,0,0);
+  HepSymMatrix ipEx(3, 0);
+  IVertexDbSvc*  vtxsvc;
+  Gaudi::svcLocator()->service("VertexDbSvc", vtxsvc);
+  if(vtxsvc->isVertexValid())
+  {
+    double* dbv = vtxsvc->PrimaryVertex();
+    double*  vv = vtxsvc->SigmaPrimaryVertex();
+    xorigin.setX(dbv[0]);
+    xorigin.setY(dbv[1]);
+    xorigin.setZ(dbv[2]);
+    ipEx[0][0] = vv[0] * vv[0];
+    ipEx[1][1] = vv[1] * vv[1];
+    ipEx[2][2] = vv[2] * vv[2];
+  }
+  else  // if cannot load vertex information, will go to another event
+    return StatusCode::SUCCESS;
+  
+  nCounter_PSL[2]++;
+  m_cutflow->Fill(2);
+ 
+  VertexParameter bs;
+  bs.setVx(xorigin);
+  bs.setEvx(ipEx);
+
+
+  int nCharge = 0;
+  for(int i = 0; i < evtRecEvent->totalCharged(); i++)
+  {
+    EvtRecTrackIterator itTrk=evtRecTrkCol->begin() + i;
+    if(!(*itTrk)->isMdcTrackValid()) continue;
+    RecMdcTrack *mdcTrk = (*itTrk)->mdcTrack();
+
+    double pt   = mdcTrk->p(); 
+    double x0   = mdcTrk->x();
+    double y0   = mdcTrk->y();
+    double z0   = mdcTrk->z();
+    double r0   = sqrt(x0*x0+y0*y0);
+    double phi0 = mdcTrk->helix(1);
+    double xv   = xorigin.x();
+    double yv   = xorigin.y();
+    double zv   = xorigin.z();
+    double Rxy  = (x0-xv)*cos(phi0)+(y0-yv)*sin(phi0);
+
+    HepVector a = mdcTrk->helix();
+    HepSymMatrix Ea = mdcTrk->err();
+    HepPoint3D point0(0.,0.,0.);   // the initial point for MDC recosntruction
+    HepPoint3D IP(xorigin[0],xorigin[1],xorigin[2]);
+    VFHelix helixip(point0,a,Ea);
+    //Extrapolate to the IP 
+    helixip.pivot(IP);
+    HepVector vecipa = helixip.a();
+    double  Rvxy0=fabs(vecipa[0]);  //the nearest distance to IP in xy plane
+    double  Rvz0=vecipa[3];         //the nearest distance to IP in z direction
+    double  Rvphi0=vecipa[1];
+    double  costheta0 = cos(mdcTrk -> theta());
+
+    if(fabs(costheta0) >= 0.93)             continue;
+    if(fabs(Rvz0) >= 10.0)                  continue;
+    if(fabs(Rvxy0) >= 1.0)                 continue;
+
+    iGood.push_back((*itTrk)->trackId());
+    //if(mdcTrk->charge()>0) { iQp.push_back((*itTrk)->trackId()); }
+    //if(mdcTrk->charge()<0) { iQm.push_back((*itTrk)->trackId()); }
+    nCharge+= mdcTrk->charge();
+  }
+  int nGood = iGood.size();
+  if(nGood != 4 || nCharge !=0) { return StatusCode::SUCCESS; }
+  nCounter_PSL[3]++;    // After Good Charged Tracks Selections
+  m_cutflow->Fill(3);
+
+//-----------------------------------------------
+// Session #3: Charged Tracks Identification
+//-----------------------------------------------
+  int nProton = 0, nKaon = 0, nPion = 0, kpid = 0, kmid = 0;
+  Vint ikp, ikm;
+  Vint ipip,ipim;
+  ikp.clear();
+  ikm.clear();
+  ipip.clear();
+  ipim.clear();
+  ParticleID *pid = ParticleID::instance();
+  
+//m_kplus_emc_e=-99;
+//m_kplus_emc_theta=-99;
+//m_kplus_emc_phi=-99;
+//m_kplus_emc_epratio=-99;
+//m_kplus_muc_dep=-99;
+//m_kplus_muc_hits=-99;
+//m_kplus_muc_layers=-99;
+
+//m_kminus_emc_e=-99;
+//m_kminus_emc_theta=-99;
+//m_kminus_emc_phi=-99;
+//m_kminus_emc_epratio=-99;
+//m_kminus_muc_dep=-99;
+//m_kminus_muc_hits=-99;
+//m_kminus_muc_layers=-99;
+
+//m_pip_emc_e=-99;
+//m_pip_emc_theta=-99;
+//m_pip_emc_phi=-99;
+//m_pip_emc_epratio=-99;
+//m_pip_muc_dep=-99;
+//m_pip_muc_hits=-99;
+//m_pip_muc_layers=-99;
+
+//m_pim_emc_e=-99;
+//m_pim_emc_theta=-99;
+//m_pim_emc_phi=-99;
+//m_pim_emc_epratio=-99;
+//m_pim_muc_dep=-99;
+//m_pim_muc_hits=-99;
+//m_pim_muc_layers=-99;
+
+if(debug) cout<<__LINE__<<endl;
+  for(int i = 0; i < nGood; i++)
+  {
+    m_kaon_pid[i]=false;
+    m_pion_pid[i]=false;
+    EvtRecTrackIterator itTrk = evtRecTrkCol->begin() + iGood[i]; 
+    RecMdcTrack *mdcTrk = (*itTrk)->mdcTrack();
+    pid->init();
+    pid->setMethod(pid->methodProbability());
+    pid->setChiMinCut(4);
+    pid->setRecTrack(*itTrk);
+    pid->usePidSys(pid->useDedx() | pid->useTof1() | pid->useTof2() | pid->useTof());
+    pid->identify(pid->onlyPionKaonProton()); // seperater Pion/Kaon/Proton    
+    pid->calculate();
+if(debug) cout<<__LINE__<<endl;
+    if(!(pid->IsPidInfoValid())) {
+      m_ptrk_pid[i] = -99;
+      m_cost_pid[i] = -99;
+      m_dedx_pid[i] = -99;
+      m_tof1_pid[i] = -99;
+      m_tof2_pid[i] = -99;
+      m_prob_pion_pid[i]=-99;
+      m_prob_kaon_pid[i]=-99;
+      m_prob_proton_pid[i]=-99;
+    }else{
+      m_ptrk_pid[i] = mdcTrk->p();
+      m_cost_pid[i] = cos(mdcTrk->theta());
+      m_dedx_pid[i] = pid->chiDedx(2);
+      m_tof1_pid[i] = pid->chiTof1(2);
+      m_tof2_pid[i] = pid->chiTof2(2);
+      m_prob_kaon_pid[i]=pid->probKaon();
+      m_prob_pion_pid[i]=pid->probPion();
+      m_prob_proton_pid[i]=pid->probProton();
+    }
+
+if(debug) cout<<__LINE__<<endl;
+    if(pid->probKaon()>0.001 &&pid->probKaon()>pid->probProton()&&pid->probKaon()>pid->probPion())
+    {
+        m_kaon_pid[i]=true;
+        RecMdcKalTrack* mdcKalTrk = (*itTrk)->mdcKalTrack();
+        RecMdcKalTrack::setPidType  (RecMdcKalTrack::kaon);
+        if(mdcKalTrk->charge() >0){
+            ikp.push_back(iGood[i]);
+            HepLorentzVector ptrk;
+            ptrk.setPx(mdcKalTrk->px());
+            ptrk.setPy(mdcKalTrk->py());
+            ptrk.setPz(mdcKalTrk->pz());
+            double p3 = ptrk.mag();
+            ptrk.setE(sqrt(p3 * p3 + mkaon * mkaon));
+            m_kp_index = i;
+            m_kp_kaon_pid = m_kaon_pid[i];
+            m_kp_kalTrk_px = mdcKalTrk->px();
+            m_kp_kalTrk_py = mdcKalTrk->py();
+            m_kp_kalTrk_pz = mdcKalTrk->pz();
+            m_kp_kalTrk_mom = p3;
+            m_kp_kalTrk_e = sqrt(p3 * p3 + mkaon * mkaon);
+            pkp.push_back(ptrk);
+        }else{
+            ikm.push_back(iGood[i]);
+            HepLorentzVector ptrk;
+            ptrk.setPx(mdcKalTrk->px());
+            ptrk.setPy(mdcKalTrk->py());
+            ptrk.setPz(mdcKalTrk->pz());
+            double p3 = ptrk.mag();
+            ptrk.setE(sqrt(p3 * p3 + mkaon * mkaon));
+            m_km_index = i;
+            m_km_kaon_pid = m_kaon_pid[i];
+            m_km_kalTrk_px = mdcKalTrk->px();
+            m_km_kalTrk_py = mdcKalTrk->py();
+            m_km_kalTrk_pz = mdcKalTrk->pz();
+            m_km_kalTrk_mom = p3;
+            m_km_kalTrk_e = sqrt(p3 * p3 + mkaon * mkaon);
+            pkm.push_back(ptrk);
+        }
+      //ikaon.push_back((*itTrk)->trackId());
+    }
+    if(pid->probPion()>0.001 &&pid->probPion()>pid->probProton()&&pid->probPion()>pid->probKaon())
+    {
+       m_pion_pid[i]=true;
+       RecMdcKalTrack* mdcKalTrk = (*itTrk)->mdcKalTrack();
+       RecMdcKalTrack::setPidType  (RecMdcKalTrack::pion);
+       if(mdcKalTrk->charge() >0){
+          ipip.push_back(iGood[i]);
+          HepLorentzVector ptrk;
+          ptrk.setPx(mdcKalTrk->px());
+          ptrk.setPy(mdcKalTrk->py());
+          ptrk.setPz(mdcKalTrk->pz());
+          double p3 = ptrk.mag();
+          ptrk.setE(sqrt(p3 * p3 + mpion * mpion));
+          m_pip_index = i;
+          m_pip_pion_pid = m_pion_pid[i];
+          m_pip_kalTrk_px = mdcKalTrk->px();
+          m_pip_kalTrk_py = mdcKalTrk->py();
+          m_pip_kalTrk_pz = mdcKalTrk->pz();
+          m_pip_kalTrk_mom = p3;
+          m_pip_kalTrk_e = sqrt(p3 * p3 + mpion * mpion);
+          ppip.push_back(ptrk);
+       }else{
+          ipim.push_back(iGood[i]);
+          HepLorentzVector ptrk;
+          ptrk.setPx(mdcKalTrk->px());
+          ptrk.setPy(mdcKalTrk->py());
+          ptrk.setPz(mdcKalTrk->pz());
+          double p3 = ptrk.mag();
+          ptrk.setE(sqrt(p3 * p3 + mpion * mpion));
+          m_pim_index = i;
+          m_pim_pion_pid = m_pion_pid[i];
+          m_pim_kalTrk_px = mdcKalTrk->px();
+          m_pim_kalTrk_py = mdcKalTrk->py();
+          m_pim_kalTrk_pz = mdcKalTrk->pz();
+          m_pim_kalTrk_mom = p3;
+          m_pim_kalTrk_e = sqrt(p3 * p3 + mpion * mpion);
+          ppim.push_back(ptrk);
+      //ipion.push_back((*itTrk)->trackId());
+      }
+    }
+ }//for
+
+if(debug) cout<<__LINE__<<endl;
+  int nKp   = ikp.size();
+  int nKm   = ikm.size();
+  int npip  = ipip.size();
+  int npim  = ipim.size();
+  // At least one identified pion&& one identified kaon
+ if(!((nKp==1||nKm==1)&&(npip==1||npim==1))) { return StatusCode::SUCCESS; }
+ // At least one identified pion || kaon
+ //if((nKp!=1)||(nKm!=1)||(npip!=1)||(npim!=1)) { return StatusCode::SUCCESS; }
+ //if(!((nKp*nKm==1)&&(npip*npim==1))) { return StatusCode::SUCCESS; }
+  nCounter_PSL[4]++;    // After PID
+  m_cutflow->Fill(4);
+  if(debug) cout<<__LINE__<<" nkp is "<<nKp<<" nkm is "<<nKm << " npip is " << npip << " npim is " << npim<<endl;
+//----------------------Vertex Fit--------------------------------------------------
+if(debug) cout<<__LINE__<<endl;
+    double bx = 1E+6;
+    double by = 1E+6;
+    double bz = 1E+6;
+    // variable declaration
+    HepPoint3D vx(0., 0., 0.);
+    HepSymMatrix Evx(3, 0);
+    Evx[0][0] = bx*bx;
+    Evx[1][1] = by*by;
+    Evx[2][2] = bz*bz;
+    // vertex parameter
+    VertexParameter vxpar;
+    vxpar.setVx(vx);
+    vxpar.setEvx(Evx);
+if(debug) cout<<__LINE__<<endl;
+    // define --- input ---  track and track parameter
+    RecMdcKalTrack *kpTrk = (*(evtRecTrkCol->begin()+ikp[0]))->mdcKalTrack();
+    RecMdcKalTrack *kmTrk = (*(evtRecTrkCol->begin()+ikm[0]))->mdcKalTrack();
+    RecMdcKalTrack *pipTrk = (*(evtRecTrkCol->begin()+ipip[0]))->mdcKalTrack();
+    RecMdcKalTrack *pimTrk = (*(evtRecTrkCol->begin()+ipim[0]))->mdcKalTrack();
+    
+    WTrackParameter wvkpTrk, wvkmTrk, wvpipTrk, wvpimTrk;
+    wvkpTrk = WTrackParameter(mkaon, kpTrk->getZHelix(), kpTrk->getZError());
+    wvkmTrk = WTrackParameter(mkaon, kmTrk->getZHelix(), kmTrk->getZError());
+    wvpipTrk = WTrackParameter(mpion, pipTrk->getZHelix(), pipTrk->getZError());
+    wvpimTrk = WTrackParameter(mpion, pimTrk->getZHelix(), pimTrk->getZError());
+// vertex fit
+if(debug) cout<<__LINE__<<endl;
+    VertexFit* vtxfit = VertexFit::instance();
+    vtxfit->init();
+    vtxfit->AddTrack(0,  wvkpTrk);
+    vtxfit->AddTrack(1,  wvkmTrk);
+    vtxfit->AddTrack(2,  wvpipTrk);
+    vtxfit->AddTrack(3,  wvpimTrk);
+    vtxfit->AddVertex(0, vxpar,0,1,2,3);
+    if(!vtxfit->Fit(0)) return SUCCESS;
+    vtxfit->Swim(0);
+    m_chisq_vtxfit=vtxfit->chisq(0);
+
+    WTrackParameter wkp = vtxfit->wtrk(0);
+    WTrackParameter wkm = vtxfit->wtrk(1);
+    WTrackParameter wpip = vtxfit->wtrk(2);
+    WTrackParameter wpim = vtxfit->wtrk(3);
+
+    vx=vtxfit->vx(0);//get vertex
+    Evx=vtxfit->Evx(0);
+
+    nCounter_PSL[5]++;    // After vertex fit
+    m_cutflow->Fill(5);
+
+//
+// Analysis
+//
+/*
+   const HepLorentzVector ecms(pResonance,0.0,0.0,mResonance); // initial state in lab frame
+   const HepLorentzVector prest(0.000000,0.0,0.0,mResonance);  // initial state in rest frame 
+   const Hep3Vector u_cms = -ecms.boostVector();
+   double chisq_mini = 9999.0;
+   double delta_mini = 9999.0;
+   int icharge1=100;
+   int iok = -1;
+   int KmFit_Flag = -1;
+   int PrCharge = 0;
+   if(debug) cout<<__LINE__<<endl;
+   for(int i1=0; i1<nProton; i1++) // used PID proton
+   {
+     EvtRecTrackIterator itTrk1 = evtRecTrkCol->begin() + iproton[i1];
+     RecMdcTrack *mdcTrk1 = (*itTrk1)->mdcTrack();
+     icharge1 = mdcTrk1->charge();
+     int ic1 = (*itTrk1)->trackId();
+     if(fabs(icharge1)!=1)     continue;
+     if(!(*itTrk1)->isMdcKalTrackValid())    continue;
+     PrCharge=icharge1;
+     for(int i2=0; i2<nGood; i2++) // pion
+     {
+       EvtRecTrackIterator itTrk2 = evtRecTrkCol->begin() + iGood[i2];
+       RecMdcTrack *mdcTrk2 = (*itTrk2)->mdcTrack();
+       int icharge2 = mdcTrk2->charge();
+       if((icharge1+icharge2)!= 0 )    continue;
+       if(!(*itTrk2)->isMdcKalTrackValid())    continue;
+       int ic2 = (*itTrk2)->trackId();
+       if(ic2==ic1)  continue;
+  
+       for(int i3=0; i3<nGood; i3++) // pi+
+       {
+         EvtRecTrackIterator itTrk3 = evtRecTrkCol->begin() + iGood[i3];
+         RecMdcTrack *mdcTrk3 = (*itTrk3)->mdcTrack();
+         int icharge3 = mdcTrk3->charge();
+         if(icharge3 != 1 )    continue;
+         if(!(*itTrk3)->isMdcKalTrackValid())    continue;
+         int ic3 = (*itTrk3)->trackId();
+         if(ic3==ic1 || ic3==ic2)  continue;
+  
+         for(int i4=0; i4<nGood; i4++) // pi-
+         {
+           EvtRecTrackIterator itTrk4 = evtRecTrkCol->begin() + iGood[i4];
+           RecMdcTrack *mdcTrk4 = (*itTrk4)->mdcTrack();
+           int icharge4 = mdcTrk4->charge();
+           if( (icharge3+icharge4) != 0 )    continue;
+           if(!(*itTrk4)->isMdcKalTrackValid())    continue;
+           int ic4 = (*itTrk4)->trackId();
+           if(ic4==ic3 || ic4==ic2 || ic4==ic1)  continue;
+  
+           //
+           // Preparation
+           //
+           HepLorentzVector ptrk_Kal1, ptrk_Kal2, ptrk_Kal3, ptrk_Kal4;
+           RecMdcKalTrack* mdcKalTrk1 = (*itTrk1)->mdcKalTrack();
+           RecMdcKalTrack* mdcKalTrk2 = (*itTrk2)->mdcKalTrack();
+           RecMdcKalTrack* mdcKalTrk3 = (*itTrk3)->mdcKalTrack();
+           RecMdcKalTrack* mdcKalTrk4 = (*itTrk4)->mdcKalTrack();
+           RecMdcKalTrack::setPidType(RecMdcKalTrack::proton);
+           RecMdcKalTrack::setPidType(RecMdcKalTrack::pion);
+           RecMdcKalTrack::setPidType(RecMdcKalTrack::pion);
+           RecMdcKalTrack::setPidType(RecMdcKalTrack::pion);
+
+           ptrk_Kal1.setPx(mdcKalTrk1->px()); ptrk_Kal1.setPy(mdcKalTrk1->py()); ptrk_Kal1.setPz(mdcKalTrk1->pz());
+           double p1_Kal1 = ptrk_Kal1.mag();
+           ptrk_Kal1.setE(sqrt(p1_Kal1*p1_Kal1+mproton*mproton)); // proton from Lambda
+           
+           ptrk_Kal2.setPx(mdcKalTrk2->px()); ptrk_Kal2.setPy(mdcKalTrk2->py()); ptrk_Kal2.setPz(mdcKalTrk2->pz());
+           double p2_Kal2 = ptrk_Kal2.mag();
+           ptrk_Kal2.setE(sqrt(p2_Kal2*p2_Kal2+mpion*mpion)); // pion from Lambda
+           
+           ptrk_Kal3.setPx(mdcKalTrk3->px()); ptrk_Kal3.setPy(mdcKalTrk3->py()); ptrk_Kal3.setPz(mdcKalTrk3->pz());
+           double p3_Kal3 = ptrk_Kal3.mag();
+           ptrk_Kal3.setE(sqrt(p3_Kal3*p3_Kal3+mpion*mpion)); // second pion
+           
+           ptrk_Kal4.setPx(mdcKalTrk4->px()); ptrk_Kal4.setPy(mdcKalTrk4->py()); ptrk_Kal4.setPz(mdcKalTrk4->pz());
+           double p4_Kal4 = ptrk_Kal4.mag();
+           ptrk_Kal4.setE(sqrt(p4_Kal4*p4_Kal4+mpion*mpion)); // third pion
+
+
+           //
+           HepLorentzVector pipi_0 = ptrk_Kal3 + ptrk_Kal4; pipi_0.boost(u_cms); double mpipi_0 = pipi_0.m(); 
+           HepLorentzVector pipi_1 = ptrk_Kal2 + ptrk_Kal3; pipi_1.boost(u_cms); double mpipi_1 = pipi_1.m();
+           HepLorentzVector pipi_2 = ptrk_Kal2 + ptrk_Kal4; pipi_2.boost(u_cms); double mpipi_2 = pipi_2.m();
+
+           HepLorentzVector rpipi_0 = ecms - (ptrk_Kal3 + ptrk_Kal4); rpipi_0.boost(u_cms); double rmpipi_0 = rpipi_0.m(); 
+           HepLorentzVector rpipi_1 = ecms - (ptrk_Kal2 + ptrk_Kal3); rpipi_1.boost(u_cms); double rmpipi_1 = rpipi_1.m();
+           HepLorentzVector rpipi_2 = ecms - (ptrk_Kal2 + ptrk_Kal4); rpipi_2.boost(u_cms); double rmpipi_2 = rpipi_2.m();
+
+ 
+           //-----------------------------------------------
+           // Session #4: Kinematic Fit 
+           //-----------------------------------------------
+           WTrackParameter i1_wTrk, i2_wTrk, i3_wTrk, i4_wTrk;
+           i1_wTrk = WTrackParameter(mproton,mdcKalTrk1->getZHelixP(),mdcKalTrk1->getZErrorP());
+           i2_wTrk = WTrackParameter(mpion,mdcKalTrk2->getZHelix(),mdcKalTrk2->getZError());
+           i3_wTrk = WTrackParameter(mpion,mdcKalTrk3->getZHelix(),mdcKalTrk3->getZError());
+           i4_wTrk = WTrackParameter(mpion,mdcKalTrk4->getZHelix(),mdcKalTrk4->getZError());
+
+           
+           HepPoint3D vWideVertex(0.0, 0.0, 0.0);
+           HepSymMatrix evWideVertex(3, 0);
+           evWideVertex[0][0] = 1.0E12;
+           evWideVertex[1][1] = 1.0E12;
+           evWideVertex[2][2] = 1.0E12;
+           
+           //
+           // 0) Set a common vertex with huge error [ Lambda --> pi- proton ]
+           //
+           VertexParameter wideVertexL;
+           wideVertexL.setVx(vWideVertex);
+           wideVertexL.setEvx(evWideVertex);
+           //
+           // 1) Build Virtual Particle (Lambda 1&2)
+           //
+           VertexFitRefine* BVP_Lambda = VertexFitRefine::instance();
+           BVP_Lambda->init();
+           BVP_Lambda->AddTrack(0, mdcKalTrk1, RecMdcKalTrack::proton);
+           BVP_Lambda->AddTrack(1, mdcKalTrk2, RecMdcKalTrack::pion);
+           BVP_Lambda->AddVertex(0, wideVertexL, 0, 1);
+
+           bool fitok1 = BVP_Lambda->Fit();
+           if (!fitok1)continue;
+           //BVP_Lambda->Swim(0);
+           //BVP_Lambda->BuildVirtualParticle(0);
+           //
+           // 2) Build Second Vertex (Lambda)
+           //
+           SecondVertexFit *BSV_Lambda = SecondVertexFit::instance();
+           BSV_Lambda->init();
+           BSV_Lambda->setPrimaryVertex(bs);
+           BSV_Lambda->AddTrack(0, BVP_Lambda->wVirtualTrack(0));
+           BSV_Lambda->setVpar(BVP_Lambda->vpar(0));
+
+           if(!BSV_Lambda->Fit())	continue;
+           WTrackParameter wLambda = BSV_Lambda->wpar(); // new vertex parameter after vt
+           double Lambda_chisq     = BSV_Lambda->chisq();	
+           double Lambda_ctau      = BSV_Lambda->ctau();	
+           double Lambda_DecayL    = BSV_Lambda->decayLength();
+           double Lambda_DecayE    = BSV_Lambda->decayLengthError();
+           HepLorentzVector svtf_Lambdabar = BSV_Lambda->p4par(); 
+                            svtf_Lambdabar.boost(u_cms);
+
+
+           //Attemp for building Ks using pip + pim, just for filling info, no impact on the subsequent primary fit 
+           {
+             //
+             // Set a common vertex with huge error [ Ks0 --> pi+pi- ]
+             //
+             VertexParameter wideVertexK;
+             wideVertexK.setVx(vWideVertex);
+             wideVertexK.setEvx(evWideVertex);
+             //
+             // Build Virtual Particle (Ks0 3&4)
+             //
+             //VertexFit* BVP_Ks0 = VertexFit::instance();
+             VertexFitRefine *BVP_Ks0 = VertexFitRefine::instance();
+             BVP_Ks0->init();
+             BVP_Ks0->AddTrack(0, mdcKalTrk3, RecMdcKalTrack::pion);
+             BVP_Ks0->AddTrack(1, mdcKalTrk4, RecMdcKalTrack::pion);
+             BVP_Ks0->AddVertex(0, wideVertexK, 0, 1);
+             //BVP_Ks0->Swim(0);
+             //BVP_Ks0->BuildVirtualParticle(0);
+             bool fitok = BVP_Ks0->Fit();
+             if (fitok){
+               //
+               // Build Second Vertex (Ks0)
+               //
+               SecondVertexFit *BSV_Ks0 = SecondVertexFit::instance();
+               BSV_Ks0->init();
+               BSV_Ks0->setPrimaryVertex(bs);
+               BSV_Ks0->AddTrack(0, BVP_Ks0->wVirtualTrack(0));
+               BSV_Ks0->setVpar(BVP_Ks0->vpar(0));
+               if(BSV_Ks0->Fit()){
+                 WTrackParameter wKs0 = BSV_Ks0->wpar(); // new vertex parameter after vt
+                 double Ks0_chisq     = BSV_Ks0->chisq();
+                 double Ks0_ctau      = BSV_Ks0->ctau();
+                 double Ks0_DecayL    = BSV_Ks0->decayLength();
+                 double Ks0_DecayE    = BSV_Ks0->decayLengthError();
+                 //HepLorentzVector svtf_Ks0 = BSV_Ks0->p4par();
+                 //                 svtf_Ks0.boost(u_cms);
+                 HepLorentzVector vfit_Ks0 = wKs0.p(); 
+                                  vfit_Ks0.boost(u_cms);
+                 vfitK_chisq  = Ks0_chisq;
+                 vfitK_ctau   = Ks0_ctau;
+                 vfitK_DecayL = Ks0_DecayL;
+                 vfitK_DecayE = Ks0_DecayE;
+                 vfitK_mKs0 = vfit_Ks0.m(); 
+                 vfitK_pKs0   = vfit_Ks0.rho();
+                 vfitK_pxKs0  = vfit_Ks0.px();
+                 vfitK_pyKs0  = vfit_Ks0.py();
+                 vfitK_pzKs0  = vfit_Ks0.pz();
+               }
+             }
+           }
+
+           //
+           // 3) Set a common vertex with huge error for all particles
+           //
+           VertexParameter vxparT;
+           vxparT.setVx(vWideVertex);
+           vxparT.setEvx(evWideVertex); 
+           //
+           // 4) Primary Vertex Fit
+           //
+           VertexFit* vtxfit = VertexFit::instance();
+           vtxfit->init();
+           vtxfit->AddTrack(0,  wLambda);
+           vtxfit->AddTrack(1,  i3_wTrk);
+           vtxfit->AddTrack(2,  i4_wTrk);
+           vtxfit->AddVertex(0, vxparT,0, 1);
+           //NOTE xai: I think we should "continue" instead of "return SUCCESS" here 
+           //if(!vtxfit->Fit(0)) return SUCCESS;
+           if(!vtxfit->Fit(0)) continue;
+           vtxfit->Swim(0); // renew information of input tracks
+           WTrackParameter wLambdaTrk = vtxfit->wtrk(0); // renewed track parameters
+           WTrackParameter wpion2Trk    = vtxfit->wtrk(1);
+           WTrackParameter wpion3Trk    = vtxfit->wtrk(2);
+           HepLorentzVector vtfit_wLambdaTrk = wLambdaTrk.p(); vtfit_wLambdaTrk.boost(u_cms);
+           HepLorentzVector vtfit_wPipTrk    = (wpion2Trk.charge()>0)? wpion2Trk.p() : wpion3Trk.p();    vtfit_wPipTrk.boost(u_cms);
+           HepLorentzVector vtfit_wPimTrk    = (wpion2Trk.charge()>0)? wpion3Trk.p() : wpion2Trk.p();    vtfit_wPimTrk.boost(u_cms);
+
+
+           for(int i = 0; i < nGam; i++)
+           {
+              RecEmcShower *gTrk = (*(evtRecTrkCol->begin()+iGam[i]))->emcShower();
+              //
+              // 5) Kinematic Fit (1C)
+              //
+              KinematicFit* kmfit = KinematicFit::instance();
+              kmfit->init();
+              kmfit->AddTrack(0, 0.0, gTrk);
+              kmfit->AddTrack(1, wLambdaTrk);
+              kmfit->AddTrack(2, wpion2Trk);
+              kmfit->AddTrack(3, wpion3Trk);
+              kmfit->AddMissTrack(4, 0.93956536); //neutron
+              kmfit->AddFourMomentum(0, ecms);
+              //if(!(kmfit->Fit()))  continue;
+              if(kmfit->Fit()) { KmFit_Flag = 1; }
+              //
+              // Calculations
+              //
+              if(kmfit->chisq() < chisq_mini)
+              {
+                 iok = 1;
+                 chisq_mini = kmfit->chisq();
+                 HepLorentzVector p4_Gamma   = kmfit->pfit(0);
+                 HepLorentzVector p4_Lambda  = kmfit->pfit(1);
+                 HepLorentzVector p4_Pip   = (wpion2Trk.charge()>0)? kmfit->pfit(2) : kmfit->pfit(3);
+                 HepLorentzVector p4_Pim   = (wpion2Trk.charge()>0)? kmfit->pfit(3) : kmfit->pfit(2);
+                 HepLorentzVector p4_Neutron = kmfit->pfit(4);
+
+ 		 // Momentum Information (kmfit)
+ 		 HepLorentzVector chicj_p4 = p4_Lambda + p4_Pip + p4_Pim + p4_Neutron;
+                  
+		 vn_ptrkga = p4_Gamma.rho();
+		 vn_ptrkla = p4_Lambda.rho();
+		 vn_ptrkpip = p4_Pip.rho();
+		 vn_ptrkpim = p4_Pim.rho();
+		 vn_ptrkneutron = p4_Neutron.rho();
+		 
+                 vn_psip_e=chicj_p4.e(); //Chicj
+                 vn_psip_px=chicj_p4.px();
+                 vn_psip_py=chicj_p4.py();
+                 vn_psip_pz=chicj_p4.pz();
+                 
+                 vn_mom_eta_e  = p4_Neutron.e();  // Neutron
+		 vn_mom_eta_px = p4_Neutron.px();
+		 vn_mom_eta_py = p4_Neutron.py();
+		 vn_mom_eta_pz = p4_Neutron.pz();
+
+		 vn_mom_pip_e  = p4_Pip.e();  // pi+ 
+		 vn_mom_pip_px = p4_Pip.px();
+		 vn_mom_pip_py = p4_Pip.py();
+		 vn_mom_pip_pz = p4_Pip.pz();
+		 
+	         vn_mom_pim_e  = p4_Pim.e();  // pi-
+		 vn_mom_pim_px = p4_Pim.px();
+		 vn_mom_pim_py = p4_Pim.py();
+		 vn_mom_pim_pz = p4_Pim.pz();
+		 
+                 vn_mom_la_e  = p4_Lambda.e();  // Lambda
+		 vn_mom_la_px = p4_Lambda.px();
+		 vn_mom_la_py = p4_Lambda.py();
+		 vn_mom_la_pz = p4_Lambda.pz();
+
+                 vn_mom_ga_e  = p4_Gamma.e();  // Gamma
+                 vn_mom_ga_px = p4_Gamma.px();
+                 vn_mom_ga_py = p4_Gamma.py();
+                 vn_mom_ga_pz = p4_Gamma.pz();
+
+                 //boost to chicj
+                 const Hep3Vector chicj_cms = -chicj_p4.boostVector();
+                 HepLorentzVector p4_psip_Lambda  = p4_Lambda;
+                 HepLorentzVector p4_psip_Pip   = p4_Pip;
+                 HepLorentzVector p4_psip_Pim   = p4_Pim;
+                 HepLorentzVector p4_psip_Neutron = p4_Neutron;
+                 p4_psip_Lambda.boost(chicj_cms); 
+                 p4_psip_Pip.boost(chicj_cms);
+                 p4_psip_Pim.boost(chicj_cms);
+                 p4_psip_Neutron.boost(chicj_cms);
+       
+                 vn_psip_mom_eta_e  = p4_psip_Neutron.e();  // Neutron
+                 vn_psip_mom_eta_px = p4_psip_Neutron.px();
+                 vn_psip_mom_eta_py = p4_psip_Neutron.py();
+                 vn_psip_mom_eta_pz = p4_psip_Neutron.pz();
+
+                 vn_psip_mom_pip_e  = p4_psip_Pip.e();  // pi+ 
+                 vn_psip_mom_pip_px = p4_psip_Pip.px();
+                 vn_psip_mom_pip_py = p4_psip_Pip.py();
+                 vn_psip_mom_pip_pz = p4_psip_Pip.pz();
+
+                 vn_psip_mom_pim_e  = p4_psip_Pim.e();  // pi-
+                 vn_psip_mom_pim_px = p4_psip_Pim.px();
+                 vn_psip_mom_pim_py = p4_psip_Pim.py();
+                 vn_psip_mom_pim_pz = p4_psip_Pim.pz();
+
+                 vn_psip_mom_la_e  = p4_psip_Lambda.e();  // Lambda
+                 vn_psip_mom_la_px = p4_psip_Lambda.px();
+                 vn_psip_mom_la_py = p4_psip_Lambda.py();
+                 vn_psip_mom_la_pz = p4_psip_Lambda.pz();
+
+                 //These are written for test
+                 vn_psip_mom_psip_e = (p4_psip_Neutron +p4_psip_Pip + p4_psip_Pim + p4_psip_Lambda).e();
+                 vn_psip_mom_psip_px = (p4_psip_Neutron +p4_psip_Pip + p4_psip_Pim + p4_psip_Lambda).px();
+                 vn_psip_mom_psip_py = (p4_psip_Neutron +p4_psip_Pip + p4_psip_Pim + p4_psip_Lambda).py();
+                 vn_psip_mom_psip_pz = (p4_psip_Neutron +p4_psip_Pip + p4_psip_Pim + p4_psip_Lambda).pz();
+
+
+ 
+                 lab_kmfit_costheta_gam    = cos(p4_Gamma.theta());
+	         lab_kmfit_costheta_Lambda = cos(p4_Lambda.theta());
+	         lab_kmfit_costheta_Pip    = cos(p4_Pip.theta()); 
+	         lab_kmfit_costheta_Pim    = cos(p4_Pim.theta()); 
+                 lab_kmfit_costheta_Neutron= cos(p4_Neutron.theta());
+                 //-------------------------------------------------
+                 // Missing Information [kmfit]
+                 //-------------------------------------------------
+                 //
+                 // Boost
+                 //
+                 p4_Gamma.boost(u_cms);   // Gamma
+                 p4_Lambda.boost(u_cms);  // Lambda
+                 p4_Pip.boost(u_cms);   // Pi+ 
+                 p4_Pim.boost(u_cms);   // Pi- 
+		 p4_Neutron.boost(u_cms); // Neutron
+		 // Missing 
+                 HepLorentzVector kmfit_nmiss = prest - p4_Gamma - p4_Lambda - p4_Pip - p4_Pim;
+                 vn_pmiss       = kmfit_nmiss.rho();
+                 vn_emiss       = kmfit_nmiss.e();
+                 vn_mmiss       = kmfit_nmiss.m();   
+                 HepLorentzVector kmfit_gamma = prest - p4_Gamma;
+                 vn_gRecoil     = kmfit_gamma.m();
+                 vn_pippimRecoil = (prest -p4_Pip - p4_Pim).m(); 
+                 vn_gpippimRecoil = (prest - p4_Gamma - p4_Pip - p4_Pim).m(); 
+                 // Invariant Mass
+                 // Lambda or anti-Lambda 
+		 //bool isAntiLambda = (icharge1>0)? false : true;
+                 HepLorentzVector kmfit_trknPip = p4_Neutron + p4_Pip;
+                 HepLorentzVector kmfit_trknPim = p4_Neutron + p4_Pim;
+                 HepLorentzVector kmfit_trknPipL = p4_Neutron + p4_Lambda + p4_Pip;
+                 HepLorentzVector kmfit_trknPimL = p4_Neutron + p4_Lambda + p4_Pim;
+                 HepLorentzVector kmfit_trkLPip = p4_Lambda + p4_Pip;
+                 HepLorentzVector kmfit_trkLPim = p4_Lambda + p4_Pim;
+                 HepLorentzVector kmfit_trknLPipPim= p4_Neutron +  p4_Lambda + p4_Pip + p4_Pim;
+                 vn_mnPip         = kmfit_trknPip.m();
+                 vn_mnPim         = kmfit_trknPim.m();
+                 vn_mnPipPim         = (p4_Neutron + p4_Pip+ p4_Pim).m();
+                 vn_mPipPim         = (p4_Pip +  p4_Pim).m();
+                 vn_mnPipL         = kmfit_trknPipL.m();
+                 vn_mnPimL         = kmfit_trknPimL.m();
+                 vn_mLPip         = kmfit_trkLPip.m();
+                 vn_mLPim         = kmfit_trkLPim.m();
+                 vn_mchicj      = kmfit_trknLPipPim.m(); 
+                 vn_mL      = p4_Lambda.m(); 
+                 vn_mn      = p4_Neutron.m(); 
+
+                 //
+                 // Momentum Information
+                 //
+                 pGam[i].boost(u_cms);
+                 ptrk_Kal1.boost(u_cms);
+                 ptrk_Kal2.boost(u_cms);
+                 ptrk_Kal3.boost(u_cms);
+                 ptrk_Kal4.boost(u_cms);
+                 nofit_ptrkpr  = ptrk_Kal1.rho(); // proton from Lambda
+                 nofit_ptrkpi1 = ptrk_Kal2.rho(); // pion from Lambda
+                 nofit_ptrkpi2 = ptrk_Kal3.rho(); // second pion 
+                 nofit_ptrkpi3 = ptrk_Kal4.rho(); // third pion 
+                 nofit_nGamma  = nGam;
+                 nofit_eGamma  = pGam[i].e();
+                 nofit_pxGamma = pGam[i].px();
+                 nofit_pyGamma = pGam[i].py();
+                 nofit_pzGamma = pGam[i].pz();
+                 //
+                 // Lambda Information
+                 //
+                 HepLorentzVector vfit_Lambdabar = wLambda.p(); vfit_Lambdabar.boost(u_cms);
+                 vfitL_chisq  = Lambda_chisq;
+                 vfitL_ctau   = Lambda_ctau;
+                 vfitL_DecayL = Lambda_DecayL;
+                 vfitL_DecayE = Lambda_DecayE;
+                 vfitL_mLambda  = vfit_Lambdabar.m();
+                 vfitL_pLambda  = vfit_Lambdabar.rho();
+                 vfitL_pxLambda = vfit_Lambdabar.px();
+                 vfitL_pyLambda = vfit_Lambdabar.py();
+                 vfitL_pzLambda = vfit_Lambdabar.pz();
+                 //
+                 // Polor Angle
+                 //
+                 nofit_costheta_pr     = cos(ptrk_Kal1.theta());
+                 nofit_costheta_pi1    = cos(ptrk_Kal2.theta());
+                 nofit_costheta_pi2    = cos(ptrk_Kal3.theta());
+                 nofit_costheta_pi3    = cos(ptrk_Kal4.theta());
+                 //
+                 kmfit_costheta_gam    = cos(p4_Gamma.theta());
+                 kmfit_costheta_Neutron= cos(p4_Neutron.theta());
+		 kmfit_costheta_Pip    = cos(p4_Pip.theta()); 
+		 kmfit_costheta_Pim    = cos(p4_Pim.theta()); 
+		 kmfit_costheta_Lambda = cos(p4_Lambda.theta());
+
+                 //-------------------------------------------------
+                 // Missing Information [secondary vertex fit for Lambda and no kmfit for others]
+                 //-------------------------------------------------
+                 HepLorentzVector nofit_Pip = (icharge3>0)? ptrk_Kal3 : ptrk_Kal4;
+                 HepLorentzVector nofit_Pim = (icharge3>0)? ptrk_Kal4 : ptrk_Kal3;
+                 
+	       	 HepLorentzVector nofit_ptrk_neutron;
+                 double nofit_px_neutron = svtf_Lambdabar.px() + nofit_Pip.px() + nofit_Pim.px() + pGam[i].px();
+                 double nofit_py_neutron = svtf_Lambdabar.py() + nofit_Pip.py() + nofit_Pim.py() + pGam[i].py();
+                 double nofit_pz_neutron = svtf_Lambdabar.pz() + nofit_Pip.pz() + nofit_Pim.pz() + pGam[i].pz();
+                 nofit_ptrk_neutron.setPx(-nofit_px_neutron); 
+                 nofit_ptrk_neutron.setPy(-nofit_py_neutron); 
+                 nofit_ptrk_neutron.setPz(-nofit_pz_neutron);
+                 double nofit_p_neutron  = nofit_ptrk_neutron.mag();	
+                 nofit_ptrk_neutron.setE(sqrt(nofit_p_neutron*nofit_p_neutron+mneutron*mneutron));
+
+                 // Missing Mass
+                 HepLorentzVector nofit_nmiss  = prest - svtf_Lambdabar - nofit_Pip.px() - nofit_Pim.px() - pGam[i];
+                 nofit_pmiss                   = nofit_nmiss.rho();
+                 nofit_emiss                   = nofit_nmiss.e();
+                 nofit_mmiss                   = nofit_nmiss.m();   
+                 HepLorentzVector nofit_gamma  = prest - pGam[i];
+                 nofit_gRecoil                 = nofit_gamma.m();
+                 nofit_pippimRecoil                 = (prest - nofit_Pip.px() - nofit_Pim).m();
+                 nofit_gpippimRecoil                 = (prest - - pGam[i] - nofit_Pip.px() - nofit_Pim).m();
+
+                 //Polar angle
+                 nofit_costheta_gam    = cos(pGam[i].theta());
+                 nofit_costheta_Neutron= cos(nofit_ptrk_neutron.theta());
+                 nofit_costheta_Pip    = cos(nofit_Pip.theta());
+                 nofit_costheta_Pim    = cos(nofit_Pim.theta());
+                 nofit_costheta_Lambda = cos(svtf_Lambdabar.theta());
+      
+                 // Invariant Mass             
+                 HepLorentzVector nofit_trknPip  =  nofit_ptrk_neutron +  nofit_Pip;
+                 HepLorentzVector nofit_trknPim  =  nofit_ptrk_neutron +  nofit_Pim;
+                 HepLorentzVector nofit_trkLPip  = svtf_Lambdabar + nofit_Pip;
+                 HepLorentzVector nofit_trkLPim  = svtf_Lambdabar + nofit_Pim;
+                 HepLorentzVector nofit_trknPipL = nofit_ptrk_neutron + svtf_Lambdabar + nofit_Pip;
+                 HepLorentzVector nofit_trknPimL = nofit_ptrk_neutron + svtf_Lambdabar + nofit_Pim;
+                 HepLorentzVector nofit_trknLPipPim = nofit_ptrk_neutron + svtf_Lambdabar + nofit_Pip + nofit_Pim;
+                 nofit_mnPip                     = nofit_trknPip.m();
+                 nofit_mnPim                     = nofit_trknPim.m();
+                 nofit_mnPipPim                     = (nofit_ptrk_neutron +  nofit_Pip + nofit_Pim).m();
+                 nofit_mPipPim                     = (nofit_Pip + nofit_Pim).m();
+                 nofit_mnPipL                     = nofit_trknPipL.m();
+                 nofit_mnPimL                     = nofit_trknPimL.m();
+                 nofit_mLPip                     = nofit_trkLPip.m();
+                 nofit_mLPim                     = nofit_trkLPim.m();
+                 nofit_mchicj                  = nofit_trknLPipPim.m(); 
+                 nofit_mL                  = svtf_Lambdabar.m(); 
+
+                 nofit_mpipi_0 = mpipi_0;
+                 nofit_mpipi_1 = mpipi_1;
+                 nofit_mpipi_2 = mpipi_2;
+                
+                 nofit_rmpipi_0 = rmpipi_0;
+                 nofit_rmpipi_1 = rmpipi_1;
+                 nofit_rmpipi_2 = rmpipi_2;
+ 
+                 //-------------------------------------------------
+                 // Missing Information [vtfit]
+                 //-------------------------------------------------
+                 HepLorentzVector vtfit_ptrk_neutron;
+                 double vtfit_px_neutron = vtfit_wLambdaTrk.px() + vtfit_wPipTrk.px() + vtfit_wPimTrk.px() + pGam[i].px();
+                 double vtfit_py_neutron = vtfit_wLambdaTrk.py() + vtfit_wPipTrk.py() + vtfit_wPimTrk.py() + pGam[i].py();
+                 double vtfit_pz_neutron = vtfit_wLambdaTrk.pz() + vtfit_wPipTrk.pz() + vtfit_wPimTrk.pz() + pGam[i].pz();
+                 vtfit_ptrk_neutron.setPx(-vtfit_px_neutron);
+                 vtfit_ptrk_neutron.setPy(-vtfit_py_neutron);
+                 vtfit_ptrk_neutron.setPz(-vtfit_pz_neutron);
+                 double vtfit_p_neutron = vtfit_ptrk_neutron.mag();	
+                 vtfit_ptrk_neutron.setE(sqrt(vtfit_p_neutron*vtfit_p_neutron+mneutron*mneutron));
+
+                 // Missing Mass
+                 HepLorentzVector vtfit_nmiss = prest - vtfit_wLambdaTrk - vtfit_wPipTrk - vtfit_wPimTrk - pGam[i];
+                 vtfit_pmiss    = vtfit_nmiss.rho();
+                 vtfit_emiss    = vtfit_nmiss.e();
+                 vtfit_mmiss    = vtfit_nmiss.m();
+                 HepLorentzVector vtfit_gamma = prest - pGam[i];
+                 vtfit_gRecoil  = vtfit_gamma.m();
+                 vtfit_pippimRecoil  = ( prest - vtfit_wPipTrk - vtfit_wPimTrk ).m();
+                 vtfit_gpippimRecoil  = ( prest - - pGam[i] - vtfit_wPipTrk - vtfit_wPimTrk ).m();
+ 
+                 // Invariant Mass
+                 HepLorentzVector vtfit_trknPip = vtfit_wPipTrk + vtfit_ptrk_neutron;
+                 HepLorentzVector vtfit_trknPim = vtfit_wPimTrk + vtfit_ptrk_neutron;
+                 HepLorentzVector vtfit_trknPipL = vtfit_wLambdaTrk + vtfit_wPipTrk + vtfit_ptrk_neutron;
+                 HepLorentzVector vtfit_trknPimL = vtfit_wLambdaTrk + vtfit_wPimTrk + vtfit_ptrk_neutron;
+                 HepLorentzVector vtfit_trkLPip = vtfit_wLambdaTrk + vtfit_wPipTrk;
+                 HepLorentzVector vtfit_trkLPim = vtfit_wLambdaTrk + vtfit_wPimTrk;
+                 HepLorentzVector vtfit_trknLPipPim= vtfit_ptrk_neutron + vtfit_wPipTrk + vtfit_wPimTrk + vtfit_wLambdaTrk;
+                 vtfit_mnPip      = vtfit_trknPip.m();
+                 vtfit_mnPim      = vtfit_trknPim.m();
+                 vtfit_mnPipPim      = (vtfit_ptrk_neutron +vtfit_wPipTrk + vtfit_wPimTrk).m();
+                 vtfit_mPipPim      = (vtfit_wPipTrk + vtfit_wPimTrk).m();
+                 vtfit_mnPipL      = vtfit_trknPipL.m();
+                 vtfit_mnPimL      = vtfit_trknPimL.m();
+                 vtfit_mLPip      = vtfit_trkLPip.m();
+                 vtfit_mLPim      = vtfit_trkLPim.m();
+                 vtfit_mchicj   = vtfit_trknLPipPim.m(); 
+                 vtfit_mL   = vtfit_wLambdaTrk.m(); 
+            
+              } // mini
+           } // E1 Gamma
+         }   // pion from Ks0
+       }     // pion from Ks0
+     }       // pion from Lambda
+   }         // proton from Lambda
+
+   //if(delta_mini > 200.0 ) { return StatusCode::SUCCESS; }
+   //if(chisq_mini > 200.0 ) { return StatusCode::SUCCESS; }
+
+   if(iok==1)
+   {
+     vn_kmfit_flag = KmFit_Flag; 
+     vn_chisq   = chisq_mini;
+     vn_run     = eventHeader->runNumber();
+     vn_event   = eventHeader->eventNumber();
+     vn_nchrg   = evtRecEvent->totalCharged();
+     vn_ngood   = nGood;
+     vn_nneu    = evtRecEvent->totalNeutral();
+     vn_nProton = nProton;
+     vn_nKaon   = nKaon;
+     vn_nPion   = nPion;
+     vn_PrCharge = PrCharge;
+     nCounter_PSL[5]++;
+     m_cutflow->Fill(5);
+   }
+*/
+     m_anaTuple->write();
+ 
+   return StatusCode::SUCCESS;
+}
+//--------------------------------------------------------------
+StatusCode EtaKstarKstarBar::finalize() {
+//--------------------------------------------------------------
+  MsgStream log(msgSvc(), name());
+  log << MSG::INFO << "in finalize()" << endmsg;
+  log << MSG::INFO << "******yunhe**********" << endmsg;
+
+  cout<<"#Total run         :     "<<nrun<<endl;
+  cout<<"#Total events      :     "<<nCounter_PSL[0]<<endl;
+  cout<<"#3<=nGam<=100      :     "<<nCounter_PSL[1]<<endl;
+  cout<<"#Load vertex       :     "<<nCounter_PSL[2]<<endl;
+  cout<<"#nGood=4,nCharge=0 :     "<<nCounter_PSL[3]<<endl;
+  cout<<"#After PID         :     "<<nCounter_PSL[4]<<endl;
+  cout<<"#After vertex fit  :     "<<nCounter_PSL[5]<<endl;
+  return StatusCode::SUCCESS;
+}
