@@ -1,0 +1,276 @@
+#ifndef Physics_Analysis_ChicPiSL_H
+#define Physics_Analysis_ChicPiSL_H 
+
+#include "GaudiKernel/AlgFactory.h"
+#include "GaudiKernel/Algorithm.h"
+#include "GaudiKernel/NTuple.h"
+
+class ChicPiSL : public Algorithm {
+
+public:
+  ChicPiSL(const std::string& name, ISvcLocator* pSvcLocator);
+  StatusCode initialize();
+  StatusCode execute();
+  StatusCode finalize();  
+
+  double GetCmsEnergy(int runNum);
+
+private:
+  
+  int    m_DataSetMode;    // Which Series of Tags Used, 0:Both (default), 1:D^0, 2:D^+
+  double mResonance;
+  double pResonance;
+  bool   m_TagD0;
+  bool   m_TagDp;
+  
+  int nevt;
+  int nrun;  
+    
+  // Declare r0, z0 cut for charged tracks
+  double vn_vr0cut;
+  double vn_vz0cut;
+
+  //Declare energy, dphi, dthe cuts for fake gamma's
+  double vn_energyThreshold;
+  double vn_gammaPhiCut;
+  double vn_gammaThetaCut;
+  bool   vn_useKalTrk;
+  
+  // 
+  int vn_test4C;
+  int vn_test5C;
+  // 
+  int vn_checkDedx;
+  int vn_checkTof;
+  
+  //
+  // define Ntuples here
+  //
+  NTuple::Tuple*  m_NKLTuple;	// Data Analysis
+  // General Info.
+  NTuple::Item<long int>  vn_run;
+  NTuple::Item<long int>  vn_event;
+  NTuple::Item<long int>  vn_nchrg;
+  NTuple::Item<long int>  vn_ngood;
+  NTuple::Item<long int>  vn_nneu;
+  NTuple::Item<long int>  vn_ngamma;
+  NTuple::Item<long int>  vn_nProton;
+  NTuple::Item<long int>  vn_PrCharge;
+  NTuple::Item<long int>  vn_nKaon;
+  NTuple::Item<long int>  vn_nPion;
+  // Lambda Info.
+  NTuple::Item<double>  vfitL_chisq;
+  NTuple::Item<double>  vfitL_ctau;
+  NTuple::Item<double>  vfitL_DecayL;
+  NTuple::Item<double>  vfitL_DecayE;
+  NTuple::Item<double>  vfitL_mLambda;
+  NTuple::Item<double>  vfitL_pLambda;
+  NTuple::Item<double>  vfitL_pxLambda;
+  NTuple::Item<double>  vfitL_pyLambda;
+  NTuple::Item<double>  vfitL_pzLambda;
+  // Ks0 Info.
+  NTuple::Item<double>  vfitK_chisq;
+  NTuple::Item<double>  vfitK_ctau;
+  NTuple::Item<double>  vfitK_DecayL;
+  NTuple::Item<double>  vfitK_DecayE;
+  NTuple::Item<double>  vfitK_mKs0;
+  NTuple::Item<double>  vfitK_pKs0;
+  NTuple::Item<double>  vfitK_pxKs0;
+  NTuple::Item<double>  vfitK_pyKs0;
+  NTuple::Item<double>  vfitK_pzKs0;
+
+  // Gamma Info.
+  NTuple::Item<int>     nofit_nGamma;
+  NTuple::Item<double>  nofit_eGamma;
+  NTuple::Item<double>  nofit_pxGamma;
+  NTuple::Item<double>  nofit_pyGamma;
+  NTuple::Item<double>  nofit_pzGamma;
+  // Momentum Info.
+  NTuple::Item<double>  nofit_ptrkpr;
+  NTuple::Item<double>  nofit_ptrkpi1;
+  NTuple::Item<double>  nofit_ptrkpi2;
+  NTuple::Item<double>  nofit_ptrkpi3;
+
+  //
+  NTuple::Item<double>  vn_ptrkp;
+  NTuple::Item<double>  vn_ptrkpb;
+  NTuple::Item<double>  vn_ptrkpi;
+  NTuple::Item<double>  vn_ptrkpr;
+  NTuple::Item<double>  vn_ptrkka;
+  NTuple::Item<double>  vn_ptrkla;
+  NTuple::Item<double>  vn_ptrkga;
+
+
+  NTuple::Item<double>  vn_chicj_e;
+  NTuple::Item<double>  vn_chicj_px;
+  NTuple::Item<double>  vn_chicj_py;
+  NTuple::Item<double>  vn_chicj_pz;
+
+  NTuple::Item<double>  vn_mom_pr_e;
+  NTuple::Item<double>  vn_mom_pr_px;
+  NTuple::Item<double>  vn_mom_pr_py;
+  NTuple::Item<double>  vn_mom_pr_pz;
+  NTuple::Item<double>  vn_mom_ka_e;
+  NTuple::Item<double>  vn_mom_ka_px;
+  NTuple::Item<double>  vn_mom_ka_py;
+  NTuple::Item<double>  vn_mom_ka_pz;
+  NTuple::Item<double>  vn_mom_ap_e;
+  NTuple::Item<double>  vn_mom_ap_px;
+  NTuple::Item<double>  vn_mom_ap_py;
+  NTuple::Item<double>  vn_mom_ap_pz;
+  NTuple::Item<double>  vn_mom_pi_e;
+  NTuple::Item<double>  vn_mom_pi_px;
+  NTuple::Item<double>  vn_mom_pi_py;
+  NTuple::Item<double>  vn_mom_pi_pz;
+  NTuple::Item<double>  vn_mom_la_e;
+  NTuple::Item<double>  vn_mom_la_px;
+  NTuple::Item<double>  vn_mom_la_py;
+  NTuple::Item<double>  vn_mom_la_pz;
+  NTuple::Item<double>  vn_mom_ga_e;
+  NTuple::Item<double>  vn_mom_ga_px;
+  NTuple::Item<double>  vn_mom_ga_py;
+  NTuple::Item<double>  vn_mom_ga_pz;
+
+
+  // Cosine of Polar Angle
+  NTuple::Item<double> nofit_costheta_pr;
+  NTuple::Item<double> nofit_costheta_pi1;
+  NTuple::Item<double> nofit_costheta_pi2;
+  NTuple::Item<double> nofit_costheta_pi3;
+  NTuple::Item<double> nofit_costheta_gam;
+  NTuple::Item<double> nofit_costheta_Neutron;
+  NTuple::Item<double> nofit_costheta_Ks0;
+  NTuple::Item<double> nofit_costheta_Lambda;
+  NTuple::Item<double> kmfit_costheta_gam;
+  NTuple::Item<double> kmfit_costheta_Neutron;
+  NTuple::Item<double> kmfit_costheta_Ks0;
+  NTuple::Item<double> kmfit_costheta_Lambda;
+  NTuple::Item<double> lab_kmfit_costheta_gam;
+  NTuple::Item<double> lab_kmfit_costheta_Neutron;
+  NTuple::Item<double> lab_kmfit_costheta_Ks0;
+  NTuple::Item<double> lab_kmfit_costheta_Lambda;
+
+
+  // Neutron Info. [nofit]
+  NTuple::Item<double>  nofit_emiss;
+  NTuple::Item<double>  nofit_pmiss;
+  NTuple::Item<double>  nofit_mmiss;
+  NTuple::Item<double>  nofit_gRecoil;
+  // Invariant Masses
+  NTuple::Item<double>  nofit_mpK;
+  NTuple::Item<double>  nofit_mpL;
+  NTuple::Item<double>  nofit_mKL;
+  NTuple::Item<double>  nofit_mchicj;
+  NTuple::Item<double>  nofit_mnK;
+  NTuple::Item<double>  nofit_mnL;
+  NTuple::Item<double>  nofit_mpipi_0;
+  NTuple::Item<double>  nofit_mpipi_1;
+  NTuple::Item<double>  nofit_mpipi_2;
+  NTuple::Item<double>  nofit_rmpipi_0;
+  NTuple::Item<double>  nofit_rmpipi_1;
+  NTuple::Item<double>  nofit_rmpipi_2;
+
+  // Neutron Info. [vtfit]
+  NTuple::Item<double>  vtfit_emiss;
+  NTuple::Item<double>  vtfit_pmiss;
+  NTuple::Item<double>  vtfit_mmiss;
+  NTuple::Item<double>  vtfit_gRecoil;
+  // Invariant Masses [vtfit]
+  NTuple::Item<double>  vtfit_mpK;
+  NTuple::Item<double>  vtfit_mpL;
+  NTuple::Item<double>  vtfit_mKL;
+  NTuple::Item<double>  vtfit_mchicj;
+  NTuple::Item<double>  vtfit_mnK;
+  NTuple::Item<double>  vtfit_mnL;
+ 
+  // Neutron Info. [kmfit]
+  NTuple::Item<double>  vn_emiss;
+  NTuple::Item<double>  vn_pmiss;
+  NTuple::Item<double>  vn_mmiss;
+  NTuple::Item<double>  vn_gRecoil;
+  // Invariant Masses [kmfit]
+  NTuple::Item<double>  vn_mpK;
+  NTuple::Item<double>  vn_mpL;
+  NTuple::Item<double>  vn_mKL;
+  NTuple::Item<double>  vn_mchicj;
+  NTuple::Item<double>  vn_mnK;
+  NTuple::Item<double>  vn_mnL;
+  NTuple::Item<double>  vn_chisq;
+  NTuple::Item<double>  vn_kmfit_flag;
+ 
+  // McTruth
+  NTuple::Item<int>   m_idxmc;
+  NTuple::Array<int>  m_trkidx;
+  NTuple::Array<int>  m_pdgid;
+  NTuple::Array<int>  m_motheridx;
+  NTuple::Array<double>  m_ptmc;
+  NTuple::Array<double>  m_pxmc;
+  NTuple::Array<double>  m_pymc;
+  NTuple::Array<double>  m_pzmc;
+  NTuple::Array<double>  m_pemc;
+  //
+
+  NTuple::Item<double>   e_ks0_mom;
+  NTuple::Item<double>   px_ks0_mom;
+  NTuple::Item<double>   py_ks0_mom;
+  NTuple::Item<double>   pz_ks0_mom;
+
+   NTuple::Item<double>   e_neutron_mom;
+  NTuple::Item<double>   px_neutron_mom;
+  NTuple::Item<double>   py_neutron_mom;
+  NTuple::Item<double>   pz_neutron_mom;
+
+ NTuple::Item<double>   e_lambda_mom;
+  NTuple::Item<double>   px_lambda_mom;
+  NTuple::Item<double>   py_lambda_mom;
+  NTuple::Item<double>   pz_lambda_mom;
+
+
+
+  NTuple::Item<double>   m_ks0_mom;
+  NTuple::Item<double>   m_ks0_cos;
+  NTuple::Item<double>   m_neutron_mom;
+  NTuple::Item<double>   m_neutron_cos;
+  NTuple::Item<double>   m_lambda_mom;
+  NTuple::Item<double>   m_lambda_cos;
+
+
+  NTuple::Tuple*  m_McTruth;     // Vertex Information
+  NTuple::Item<int>      n_idxmc;
+  NTuple::Array<int>     n_trkidx;
+  NTuple::Array<int>     n_pdgid;
+  NTuple::Array<int>     n_motheridx;
+  NTuple::Array<double>  n_ptmc;
+  NTuple::Array<double>  n_pxmc;
+  NTuple::Array<double>  n_pymc;
+  NTuple::Array<double>  n_pzmc;
+  NTuple::Array<double>  n_pemc;
+  //
+  NTuple::Item<double>   n_ks0_mom;
+  NTuple::Item<double>   n_ks0_cos;
+  NTuple::Item<double>   n_neutron_mom;
+  NTuple::Item<double>   n_neutron_cos;
+  NTuple::Item<double>   n_lambda_mom;
+  NTuple::Item<double>   n_lambda_cos;
+
+  //
+  //--------------------------------------------------------
+  //
+  NTuple::Tuple*  m_tuple1;	// Vertex Information
+  NTuple::Item<double>  vn_vx0;
+  NTuple::Item<double>  vn_vy0;
+  NTuple::Item<double>  vn_vz0;
+  NTuple::Item<double>  vn_vxv;
+  NTuple::Item<double>  vn_vyv;
+  NTuple::Item<double>  vn_vzv;
+  NTuple::Item<double>  vn_Rxy;
+  NTuple::Item<double>  vn_Vz;
+
+  NTuple::Tuple*  m_tuple2;	// Photon Information
+  NTuple::Item<double>   vn_angle;
+  NTuple::Item<double>   vn_esc;
+  NTuple::Item<long int> vn_trkid;
+  NTuple::Item<long int> vn_qtrk;
+};
+
+#endif 

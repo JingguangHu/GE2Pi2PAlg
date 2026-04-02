@@ -1,0 +1,25 @@
+package GE2Pi2PAlg
+author xiaocong Ai<xiaocong.ai@cern.ch>
+
+use BesPolicy BesPolicy-*
+use GaudiInterface GaudiInterface-* External
+
+use DstEvent    DstEvent-*     Event
+use EventModel  EventModel-*   Event
+use EvtRecEvent EvtRecEvent-*  Event
+
+use VertexFit   VertexFit-*    Analysis
+use ParticleID  ParticleID-*   Analysis
+use Identifier  Identifier-*   DetectorDescription
+use BesROOT     BesROOT-00-*   External
+use VertexFitRefine       VertexFitRefine-*            Analysis
+use MdcRecEvent MdcRecEvent-*  Mdc
+use TofRecEvent TofRecEvent-*  Tof
+use EmcRecEventModel  EmcRecEventModel-*  Emc
+use MucRecEvent MucRecEvent-*  Muc
+use McTruth     McTruth-*      Event
+
+apply_pattern component_library 
+library GE2Pi2PAlg  *.cxx  components/*.cxx
+
+apply_pattern declare_runtime files=*.txt
